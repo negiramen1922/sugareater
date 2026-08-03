@@ -232,6 +232,9 @@ canvas{display:block;position:fixed;inset:0;touch-action:none;}
 #hpbar{height:12px;background:#2a1a1a;border:1px solid #48302c;}
 #hpfill{height:100%;width:100%;background:linear-gradient(90deg,#e8434f,#ff7a6b);transition:width .12s;}
 #hptext{font-size:10px;letter-spacing:.16em;color:var(--cream-dim);margin-top:4px;}
+#shbar{height:8px;background:#14232b;border:1px solid #305a6e;margin-top:5px;}
+#shfill{height:100%;width:100%;background:linear-gradient(90deg,#6fccff,#bfe9ff);transition:width .12s;}
+#shtext{font-size:9px;letter-spacing:.14em;color:#bfe9ff;margin-top:3px;}
 #killbox{position:absolute;left:16px;bottom:20px;}
 #killnum{font-family:'Bungee',cursive;font-size:46px;line-height:.9;color:var(--cream);
   text-shadow:0 3px 12px #000;}
@@ -485,7 +488,9 @@ img.spr{display:inline-block;vertical-align:middle;image-rendering:pixelated;
     <div id="skillpct">0%</div>
   </div>
   <div id="hpwrap"><div id="hpbar"><div id="hpfill"></div></div>
-    <div id="hptext">HP 120 / 120</div></div>
+    <div id="hptext">HP 120 / 120</div>
+    <div id="shieldrow" class="hidden"><div id="shbar"><div id="shfill"></div></div>
+      <div id="shtext"></div></div></div>
   <div id="killbox"><div id="killnum">0</div>
     <div id="killlabel">DEVOURED</div><div id="kps">0 / SEC</div></div>
   <div id="slots"><div id="wrow"></div><div id="prow"></div></div>
@@ -855,14 +860,14 @@ const WEAPONS = {
   wrap:{
     id:'wrap', meta:{key:'dmg', per:0.045, label:'シールドの厚さ'}, name:'ラップ', icon:'🧻', kind:'guard', trait:'シールド',
     desc:'自分をラップで包む。受けたダメージを肩代わりし、破れてもしばらくすると巻き直す。',
-    dmg:40, count:1, cd:9.0,
+    dmg:40, count:1, cd:12.0,
     lvUp:[
-      {dmg:.25}, {cd:-1.2}, {dmg:.25}, {cd:-1.0},
-      {dmg:.3}, {cd:-1.0}, {dmg:.35,cd:-1.2}
+      {dmg:.25}, {cd:-0.8}, {dmg:.25}, {cd:-0.7},
+      {dmg:.3}, {cd:-0.7}, {dmg:.35,cd:-0.8}
     ],
     evo:{ name:'業務用ラップ', flag:'seal',
       desc:'厚みが増し、破れてもすぐに巻き直せるようになる。',
-      mul:{dmg:1.9, cd:0.55} },
+      mul:{dmg:1.9, cd:0.72} },
     lvText:[
       '🛡 シールドが厚くなる',
       '巻き直しが早くなる',
@@ -1070,8 +1075,8 @@ const WEAPON_AXES = {
   cream:  {dmg:3, count:0, spd:5, area:5},
   // 寸胴鍋：一撃の重さと鍋の大きさが本体。速さを上げると避けられなくなるので控えめ。
   stockpot:{dmg:6, count:2, spd:2, area:5},
-  // ラップ：攻撃しないので威力・数・広さは無い。巻き直しの速さだけ伸ばせる。
-  wrap:   {dmg:5, count:0, spd:4, area:0},
+  // ラップ：攻撃しないので威力・数・広さは無い。巻き直しの速さだけ伸ばせる（早くなりすぎないよう3段まで）。
+  wrap:   {dmg:5, count:0, spd:3, area:0},
   // ガスバーナー：吹いている間の火力と広がりが本体。数を増やす武器ではない。
   burner: {dmg:5, count:0, spd:4, area:5},
   // フライヤー：しぶきの数と油だまりの広さで面を作る。速さは控えめ。
@@ -1082,11 +1087,29 @@ function axisMax(id, key){
   return (a && a[key]!==undefined) ? a[key] : AXIS_DEFAULT[key];
 }
 const AXIS_INFO = {
-  dmg:   {label:'威力', per:'ダメージ +10%'},
-  count: {label:'数',   per:'弾・回数 +1'},
-  spd:   {label:'速さ', per:'攻撃間隔 -9%'},
-  area:  {label:'広さ', per:'当たり判定 +14%'},
+  dmg:   {label:'威力', up:'威力増加', eff:'ダメージが増える（+10%）',       per:'ダメージ +10%'},
+  count: {label:'数',   up:'数増加',   eff:'弾・攻撃の数が増える（+1）',     per:'弾・回数 +1'},
+  spd:   {label:'速さ', up:'速度加速', eff:'攻撃の間隔が短くなる（-9%）',    per:'攻撃間隔 -9%'},
+  area:  {label:'広さ', up:'範囲拡大', eff:'当たり判定が広がる（+14%）',    per:'当たり判定 +14%'},
 };
+
+/* 武器レベルアップの中身（lvUp の1段）から、効果が分かる短い名前を作る。
+   その段でいちばん「らしさ」が出るキーを優先して選ぶ。組み合わせ段は
+   カード下の説明文（lvText）が中身を補うので、名前は代表効果だけでよい。 */
+const UP_NAME_ORDER = [
+  ['split','拡散強化'], ['pierce','貫通強化'], ['chains','連鎖強化'],
+  ['bounce','反射強化'], ['impact','連撃強化'], ['imz','持続強化'],
+  ['zdps','持続強化'], ['zlife','持続強化'], ['slow','足止め強化'],
+  ['count','数増加'],   ['cd','速度加速'],   ['dmg','威力増加'],
+  ['blast','範囲拡大'], ['area','範囲拡大'], ['size','範囲拡大'],
+  ['dist','射程強化'],  ['jump','射程強化'], ['reach','射程強化'],
+  ['speed','弾速強化'], ['backMul','復路強化'], ['falloff','減衰緩和'],
+];
+function upgradeAction(u){
+  if(!u) return '強化';
+  for(const [k,label] of UP_NAME_ORDER) if(u[k]!==undefined) return label;
+  return '強化';
+}
 
 /* --------------------------------------------------------------- パッシブ */
 /* パッシブ。武器と同じく厨房で育てられる。
@@ -6189,6 +6212,15 @@ function updateHud(){
   $('xpfill').style.width=(state.exp/state.expNext*100)+'%';
   $('hpfill').style.width=(state.hp/state.maxhp*100)+'%';
   $('hptext').textContent=`HP ${Math.ceil(state.hp)} / ${Math.round(state.maxhp)}`;
+  // ラップのシールド残量を数字とバーで見せる（ラップを持っているときだけ）
+  const shrow=$('shieldrow');
+  if(state.shieldMax>0){
+    shrow.classList.remove('hidden');
+    $('shfill').style.width=Math.max(0,state.shield/state.shieldMax*100)+'%';
+    $('shtext').textContent=`🧻 シールド ${Math.ceil(state.shield)} / ${Math.round(state.shieldMax)}`;
+  } else if(!shrow.classList.contains('hidden')){
+    shrow.classList.add('hidden');
+  }
   $('killnum').textContent=state.kills;
   const k=$('kps');
   if(state.kpsNow>3){ k.style.opacity='1'; k.textContent=state.kpsNow+' / SEC'; } else k.style.opacity='0';
@@ -6384,16 +6416,16 @@ function cardFace(c){
       lvl=`<span class="tag-new">NEW ・ 特性：${d.trait}</span>`; ds=d.desc;
     } else if(c.kind==='weapon-up'){
       const d=WEAPONS[c.id], w=state.weapons.find(x=>x.id===c.id);
-      ico=iconOf(d); nm=d.name;
+      ico=iconOf(d); nm=d.name+upgradeAction(d.lvUp[w.lv-1]);
       lvl=`<span class="tag-w">Lv ${w.lv} → ${w.lv+1}</span>`;
       ds=d.lvText[w.lv-1]||'強化';
     } else if(c.kind.startsWith('mod-')){
       const key=c.kind.slice(4), A=AXIS_INFO[key];
       const d=WEAPONS[c.id], w=state.weapons.find(x=>x.id===c.id);
       const cur=w.mods[key]||0, max=axisMax(c.id, key);
-      ico=iconOf(d); nm=d.name+'の'+A.label;
+      ico=iconOf(d); nm=d.name+(A.up||A.label);
       lvl=`<span class="tag-up">${A.label} ${cur} → ${cur+1} / ${max}</span>`;
-      ds=A.per+'。';
+      ds=(A.eff||A.per)+'。';
     } else {
       const d=PASSIVES[c.id], lv=state.passives[c.id]||0;
       ico=d.icon; nm=d.name;

@@ -4900,9 +4900,9 @@ function bossShotMed(e, d, ang){
 }
 
 /* ジンジャージェネラルの専用サイクル。HP帯ごとに決まった手順をループする。
-   ・第1（100–50%）：自分の周囲に波紋×3連続 → ねじれ2方向の回転弾幕
-   ・第2（50–20%）：ねじれ2方向の回転弾幕 → 直後に4方向ビーム → 自機狙い5連扇×5
-   ・第3（20%以下）：ねじれ弾幕 → 8方向の中弾幕 → 4方向ビーム → 通常＋中弾幕の5連扇セットを自機狙い×6
+   ・第1（100–50%）：ねじれ2方向の回転弾幕 → 直後に4方向ビーム → 自機狙い5連扇×5
+   ・第2（50–20%）：ねじれ弾幕 → 8方向の中弾幕 → 4方向ビーム → 通常＋中弾幕の5連扇セットを自機狙い×6
+   ・第3（20%以下）：全方位の小・中を交互に6回 → ひねり（回転弾幕） → 8方向ビーム
    部品はすべて「読めて避けられる」ことを優先（弾速は控えめ・ビームは予告つき）。 */
 function gSpiral(e, d, arms){                    // ねじれ回転弾幕：正回転＋逆回転を重ねる
   if(e.bt<=0){
@@ -4912,16 +4912,13 @@ function gSpiral(e, d, arms){                    // ねじれ回転弾幕：正�
     for(let k=0;k<arms;k++) bossShot(e, d, -e.face + k/arms*6.283);
   }
 }
-function gRipple(e, d){                            // 波紋：自分の周囲へ全周リング
-  bossRing(e, d, 20, Math.random()*6.283);
-}
 function gMedRing(e, d, n){                        // 中弾幕：大きめの弾をn方向へ
   const off = Math.random()*6.283;
   for(let k=0;k<n;k++) bossShotMed(e, d, off + k/n*6.283);
 }
-function gBeam4(e, d){                             // 4方向ビーム：十字に固定（追尾なし・予告つき）
+function gBeams(e, d, n){                          // n方向ビーム：等間隔で固定（追尾なし・予告つき）
   const base = Math.atan2(state.py-e.y, state.px-e.x);
-  for(let k=0;k<4;k++) fireBeam(e, d, 0, base + k*Math.PI/2, true);
+  for(let k=0;k<n;k++) fireBeam(e, d, 0, base + k*(6.283/n), true);
 }
 function gFan(e, d, n, med){                       // 自機狙いの5連扇
   const a0 = Math.atan2(state.py-e.y, state.px-e.x);
@@ -4943,43 +4940,50 @@ function bossGinger(e, d, dt, nx, ny, dist, sp){
   const adv  = (dur)=>{ e.pat++;  e.sub=0; e.bt=0; e.patT=dur||0; };
   const loop = (dur)=>{ e.pat=0;  e.sub=0; e.bt=0; e.patT=dur||0; };
 
-  // フェーズが切り替わったら手順を先頭から
-  if(e.gph!==cph){ e.gph=cph; e.pat=0; e.sub=0; e.bt=0; e.patT=(cph===1?0:SPIRAL); }
+  // フェーズが切り替わったら手順を先頭から（第1・第2は螺旋始まり、第3はリング始まり）
+  if(e.gph!==cph){ e.gph=cph; e.pat=0; e.sub=0; e.bt=0; e.patT=(cph===3?0:SPIRAL); }
 
-  if(cph===1){
-    if(e.pat===0){                               // 波紋×3連続
-      if(e.bt<=0 && e.sub<3){ gRipple(e,d); e.sub++; e.bt=0.55; }
-      if(e.sub>=3 && e.bt<=0) adv(SPIRAL);
-    } else {                                     // ねじれ2方向 回転弾幕
-      gSpiral(e, d, 2);
-      if(e.patT<=0) loop(0);
-    }
-  }
-  else if(cph===2){
-    if(e.pat===0){                               // ねじれ2方向 回転弾幕
+  if(cph===1){                                   // ねじれ2方向 → 4方向ビーム → 自機狙い扇×5
+    if(e.pat===0){
       gSpiral(e, d, 2);
       if(e.patT<=0) adv(0);
-    } else if(e.pat===1){                        // 4方向ビーム
-      if(e.sub===0){ gBeam4(e,d); e.sub=1; e.patT=BEAMWAIT; }
+    } else if(e.pat===1){                        // 4方向ビーム（据え置き）
+      if(e.sub===0){ gBeams(e,d,4); e.sub=1; e.patT=BEAMWAIT; }
       if(e.patT<=0) adv(0);
     } else {                                     // 自機狙い5連扇×5
       if(e.bt<=0 && e.sub<5){ gFan(e,d,5,false); e.sub++; e.bt=0.45; }
       if(e.sub>=5 && e.bt<=0) loop(SPIRAL);
     }
   }
-  else {
-    if(e.pat===0){                               // ねじれ弾幕（濃いめ3方向）
+  else if(cph===2){                              // ねじれ → 8方向中弾幕 → 4方向ビーム → 扇セット×6
+    if(e.pat===0){
       gSpiral(e, d, 3);
       if(e.patT<=0) adv(0);
     } else if(e.pat===1){                        // 8方向 中弾幕（2周）
       if(e.bt<=0 && e.sub<2){ gMedRing(e,d,8); e.sub++; e.bt=0.7; }
       if(e.sub>=2 && e.bt<=0) adv(0);
-    } else if(e.pat===2){                        // 4方向ビーム
-      if(e.sub===0){ gBeam4(e,d); e.sub=1; e.patT=BEAMWAIT; }
+    } else if(e.pat===2){                        // 4方向ビーム（据え置き）
+      if(e.sub===0){ gBeams(e,d,4); e.sub=1; e.patT=BEAMWAIT; }
       if(e.patT<=0) adv(0);
     } else {                                     // 通常＋中弾幕の5連扇セットを自機狙い×6
       if(e.bt<=0 && e.sub<6){ gFan(e,d,5,false); gFan(e,d,5,true); e.sub++; e.bt=0.5; }
       if(e.sub>=6 && e.bt<=0) loop(SPIRAL);
+    }
+  }
+  else {                                         // 第3：全方位の小・中を交互×6 → ひねり → 8方向ビーム
+    if(e.pat===0){
+      if(e.bt<=0 && e.sub<6){
+        if(e.sub%2===0) bossRing(e, d, 20, Math.random()*6.283);   // 全方位の小
+        else            gMedRing(e, d, 14);                         // 全方位の中
+        e.sub++; e.bt=0.5;
+      }
+      if(e.sub>=6 && e.bt<=0) adv(SPIRAL);
+    } else if(e.pat===1){                        // ひねり（回転弾幕）
+      gSpiral(e, d, 3);
+      if(e.patT<=0) adv(0);
+    } else {                                     // 8方向ビーム
+      if(e.sub===0){ gBeams(e,d,8); e.sub=1; e.patT=BEAMWAIT; }
+      if(e.patT<=0) loop(0);
     }
   }
 }

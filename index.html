@@ -581,11 +581,11 @@ const CFG = {
 /* =========================================================================
    武器：6種。それぞれ「伸ばすと何が変わるか」の軸を別にしてある。
      麺棒     … 往復回数とノックバック（押し返して隊列を崩す）
-     ナイフ   … 貫通（列を貫く）
+     ナイフ   … 分裂（当たると小さなナイフに分かれる）
      フォーク … 突進回数と距離（機動で切り開く）
      レモン   … ゾーンの持続と減速（地形を作る）
      スプーン … 射程と復路の威力（往復で二度刈る）
-     おぼん   … 回転速度と刻み間隔（密着を挽き続ける）
+     フライパン … 回転速度と刻み間隔（密着を挽き続ける）
    ========================================================================= */
 const WEAPONS = {
   rollingpin:{
@@ -610,36 +610,36 @@ const WEAPONS = {
     ]
   },
   knife:{
-    id:'knife', spr:'w_knife', meta:{key:'cd', per:0.016, label:'投擲間隔'}, name:'ナイフ', icon:'🔪', kind:'shot', trait:'貫通',
-    desc:'最寄りの敵へ自動で投げる。貫通が伸びると列ごと薙ぎ払える。',
-    dmg:15, count:2, cd:0.72, speed:430, life:1.15, size:7, pierce:0,
+    id:'knife', spr:'w_knife', meta:{key:'cd', per:0.016, label:'投擲間隔'}, name:'ナイフ', icon:'🔪', kind:'shot', trait:'分裂',
+    desc:'最寄りの敵へ自動で投げる。敵に当たると小さなナイフに分かれて飛び散る。貫通はさいばしに任せる。',
+    dmg:15, count:2, cd:0.72, speed:430, life:1.15, size:7, pierce:0, split:0,
     lvUp:[
-      {dmg:.15}, {pierce:1,size:1}, {count:1}, {cd:-.14},
-      {pierce:1,size:1}, {count:1}, {pierce:1,dmg:.2}
+      {dmg:.15}, {split:1,size:1}, {count:1}, {cd:-.14},
+      {split:1,size:1}, {count:1}, {split:1,dmg:.2}
     ],
     evo:{ name:'反射ナイフ', flag:'bounce',
-      desc:'貫通しきったあと、近くの敵へ跳ね返って飛び続ける（最大6回）。',
-      mul:{dmg:2.0, bounce:9, life:1.6, pierce:2} },
+      desc:'当たって分かれたナイフが、近くの敵へ次々と跳ね返って飛び続ける（最大6回）。',
+      mul:{dmg:2.0, bounce:9, life:1.6} },
     lvText:[
       '威力 +15%',
-      '⚔ 貫通 1（敵をすり抜ける）',
+      '🔪 分裂 1（当たると1本に分かれる）',
       'ナイフ +1本',
       '投擲間隔 -14%',
-      '⚔ 貫通 2（列を貫く）',
+      '🔪 分裂 2（当たると2本に分かれる）',
       'ナイフ +1本',
-      '⚔ 貫通 3（大群を串刺し）・威力 +20%'
+      '🔪 分裂 3（当たると3本に分かれる）・威力 +20%'
     ]
   },
   fork:{
     id:'fork', spr:'w_fork', meta:{key:'cd', per:0.016, label:'突進間隔'}, name:'フォーク', icon:'🍴', kind:'dash', trait:'突き刺し',
-    desc:'進んでいる方向へ突進して貫き、着地点を突き刺す。突進中は無敵。回数は「数」で増える。',
+    desc:'進んでいる方向へ突進して貫き、着地点を突き刺す。突進中はダメージカット（被ダメージ -60%）。回数は「数」で増える。',
     dmg:50, count:1, cd:3.0, dist:132, dur:0.16, size:19, impact:1, imz:0,
     lvUp:[
       {dmg:.22,size:2}, {cd:-.12,size:3}, {impact:1}, {cd:-.16,dmg:.15},
       {dmg:.22,size:4}, {imz:1}, {impact:1,cd:-.16,dmg:.25,size:5}
     ],
     evo:{ name:'二又の牙', flag:'fangs',
-      desc:'突進が1回増え、着地したあとも無敵が続く。突き刺しが巨大化する。',
+      desc:'突進が1回増え、着地したあとも少しの間ダメージカットが続く。突き刺しが巨大化する。',
       mul:{dmg:1.85, count:1, size:1.7} },
     lvText:[
       '威力 +22%・突き刺しの範囲が拡大',
@@ -704,8 +704,8 @@ const WEAPONS = {
       {chains:3}, {cd:-.18}, {chains:4,falloff:.06,dmg:.22}
     ],
     evo:{ name:'雷雲のシート', flag:'storm',
-      desc:'放電が3本同時に走り、跳ねても威力がまったく落ちなくなる。',
-      mul:{dmg:1.5, count:2, chains:3}, set:{falloff:1.0} },
+      desc:'跳ねても威力がまったく落ちなくなり、さらに多くの敵へ連鎖する。放電の本数は「数」の強化で増やす。',
+      mul:{dmg:1.7, chains:5}, set:{falloff:1.0} },
     lvText:[
       '威力 +18%',
       '⚡ 連鎖 +2（4→6体）',
@@ -729,49 +729,27 @@ const WEAPONS = {
     dmg:30, count:1, cd:1.05, speed:340, life:0.5, size:22, pierce:3,
     lvUp:[], lvText:[]
   },
+  /* フライパン：身のまわりを回り続ける攻撃専用の回転物。もとは「おぼん」。
+     防御用の弾はじきは廃止したので、当てることに専念する純粋な近接。 */
   oban:{
-    id:'oban', meta:{key:'spin', per:0.026, label:'回転速度'}, name:'おぼん', icon:'🥈', kind:'orbit', trait:'回転',
-    desc:'自分の周りを回転し続ける。回転が速いほど密着した敵を挽き続ける。攻撃専用で弾は防げない。',
+    id:'oban', spr:'w_pan', meta:{key:'spin', per:0.026, label:'回転速度'}, name:'フライパン', icon:'🍳', kind:'orbit', trait:'回転',
+    desc:'フライパンが自分の周りを回転し続ける。回転が速いほど密着した敵を挽き続ける。攻撃専用で弾は防げない。',
     dmg:15, count:1, radius:62, spin:2.9, size:18, hitGap:0.36,
     lvUp:[
       {dmg:.18}, {count:1}, {spin:.9}, {radius:14,size:2},
       {count:1}, {hitGap:-.28,spin:.7}, {count:1,dmg:.2}
     ],
-    evo:{ name:'銀盆の輪', flag:'dualring',
+    evo:{ name:'二重のフライパン', flag:'dualring',
       desc:'内側と外側の二重の輪になり、たがいに逆向きに回りはじめる。',
       mul:{dmg:1.6, radius:1.5, size:1.2} },
     lvText:[
       '威力 +18%',
-      'おぼん +1枚',
+      'フライパン +1枚',
       '⚙ 回転速度 +31%（薙ぐ回数が増える）',
-      '回転半径が拡大・おぼんが大型化',
-      'おぼん +1枚',
+      '回転半径が拡大・フライパンが大型化',
+      'フライパン +1枚',
       '⚙ 同じ敵を刻む間隔 -28%・回転速度上昇',
-      'おぼん +1枚・威力 +20%'
-    ]
-  },
-  /* フライパンシールド：guardRing を付けた回転物。おぼんと違って弾を弾く。
-     防御が本業なので、当てる力はおぼんより低い。 */
-  lid:{
-    id:'lid', spr:'w_pan', meta:{key:'size', per:0.030, label:'フライパンの大きさ'}, name:'フライパンシールド', icon:'🍳', kind:'orbit', trait:'弾を弾く',
-    desc:'身のまわりを回り、敵の弾を受け止める。ぶつかった敵も削るが、攻めは控えめ。',
-    dmg:7, count:1, radius:70, spin:2.2, size:22, hitGap:0.50,
-    guardRing:true, guardHp:10, guardRespawn:7,
-    lvUp:[
-      {count:1}, {size:4,dmg:.15}, {count:1}, {spin:.5,dmg:.15},
-      {size:5,hitGap:-.06}, {count:1}, {count:1,size:6,dmg:.2}
-    ],
-    evo:{ name:'鉄壁のフライパン', flag:'dualring',
-      desc:'内と外の二重に回り、弾を受け止める面がほぼ途切れなくなる。',
-      mul:{dmg:1.6, size:1.3, count:1} },
-    lvText:[
-      '🍳 フライパン +1枚（2枚になる）',
-      'フライパンが大きくなる・威力 +15%',
-      '🍳 フライパン +1枚（3枚になる）',
-      '回転速度上昇・威力 +15%',
-      'フライパンが大型化・刻む間隔 -6%',
-      '🍳 フライパン +1枚（4枚になる）',
-      '🍳 フライパン +1枚（5枚）・大幅に大型化・威力 +20%'
+      'フライパン +1枚・威力 +20%'
     ]
   },
   /* コショウ挽き：ナイフと同じ仕組みで、広い扇に短い射程。密着で全弾当たる。 */
@@ -1070,7 +1048,7 @@ const WEAPON_LIST = Object.keys(WEAPONS).filter(k=>!WEAPONS[k].innate);
    伸ばせない軸がある武器は、代わりに別の軸を1段多く積める。 */
 const AXIS_DEFAULT = {dmg:5, count:3, spd:4, area:4};
 const WEAPON_AXES = {
-  // ナイフ：細い刃を貫かせる武器。太らせても性格が変わらないので広さは無し。かわりに数が1多い。
+  // ナイフ：当たると分裂する武器。太らせても性格が変わらないので広さは無し。かわりに数が1多い。
   knife:  {dmg:5, count:4, spd:4, area:0},
   // 粗挽きコショウ：扇の幅を固定して密度で殺すのが売り。広げると別物になるので広さは無し。
   pepper: {dmg:5, count:4, spd:4, area:0},
@@ -2036,7 +2014,7 @@ const enemies = makePool(CFG.MAX_ENEMIES, ()=>({
 }));
 const projs   = makePool(CFG.MAX_PROJ, ()=>({
   x:0,y:0,vx:0,vy:0,r:7,dmg:0,life:0,pierce:0,src:0,ang:0,hitIds:new Set(),
-  mode:0, tx:0, ty:0, trav:0, maxd:0, backMul:1, wid:0, turned:false, bounce:0,
+  mode:0, tx:0, ty:0, trav:0, maxd:0, backMul:1, wid:0, turned:false, bounce:0, split:0,
   cluster:0, dot:0, hitGapT:0, look:'', zcol:'',
   blast:0, zdps:0, zlife:0, zr:0, slow:0, pull:0, pullN:0
 }));
@@ -2332,7 +2310,7 @@ const state = {
   spawnAcc:0, kpsWindow:[], kpsBest:0, kpsNow:0,
   fps:60, fpsAcc:0, fpsN:0, shake:0, flashT:0, flashG:0,
   bannerText:'', bannerColor:'#ffd84d', bannerT:0, lastHeal:-99, lastVac:-99,
-  dash:null, cards:[], hits:0
+  dash:null, cutT:0, cutAmt:0, cards:[], hits:0
 };
 
 /* ランの開始時に装備の効果を固めて持つ（毎フレーム計算しないため） */
@@ -2413,7 +2391,7 @@ function weaponStat(w){
     zlife:d.zlife||0, zr:d.zr||0, slow:d.slow||0, backMul:d.backMul||1,
     chains:d.chains||0, jump:d.jump||0, falloff:d.falloff||0, reach:d.reach||0,
     impact:d.impact||0, imz:d.imz||0, spread:d.spread||0,
-    fan:d.fan||0, volley:d.volley||0,
+    fan:d.fan||0, volley:d.volley||0, split:d.split||0,
     pull:d.pull||0, pullN:d.pullN||0, stun:d.stun||0, warm:d.warm||0,
     bounce:0
   };
@@ -2783,6 +2761,8 @@ function hurtPlayer(dmg){
   const dr = (state.eb.dr||0) + (state.cb.dr||0) + (state.extras.wall?18:0)
            - (PASSIVES.blaze.neg.per * (state.passives.blaze||0));
   dmg *= (1 - Math.min(65, dr)/100);
+  // フォークの突進中はダメージカット（無敵ではないので0にはならない）。
+  if(state.cutT>0) dmg *= (1 - state.cutAmt);
   // ラップのシールドが先に受け止める。割れると音と光で分かるようにする。
   if(state.shield > 0){
     const use = Math.min(state.shield, dmg);
@@ -3397,7 +3377,7 @@ function doShot(wi, s, def, n){
     const p = projs.spawn(); if(!p) break;
     p.mode=0; p.x=state.px; p.y=state.py; p.ang=a;
     p.vx=Math.cos(a)*s.speed; p.vy=Math.sin(a)*s.speed;
-    p.r=s.size; p.dmg=s.dmg; p.pierce=s.pierce;
+    p.r=s.size; p.dmg=s.dmg; p.pierce=s.pierce; p.split=s.split||0;
     p.life=s.life*(s.fan>0 ? (0.85+Math.random()*0.3) : 1);   // 散弾は飛距離にばらつきを持たせる
     p.bounce=s.bounce||0; p.wid=wi; p.hitIds.clear();
     p.look = def.look||''; p.zcol='';
@@ -3427,8 +3407,9 @@ function doSweep(wi, s, dir){
 /* 突進の更新 */
 function updateDash(dt){
   const D = state.dash; if(!D) return;
-  // 突進中はずっと無敵。弾もビームも通さない。
-  state.iframe = Math.max(state.iframe, 0.12);
+  // 突進中は無敵ではなくダメージカット。弾もビームも接触も、軽くはなるが通る。
+  state.cutT = Math.max(state.cutT, 0.06);
+  state.cutAmt = 0.6;
   if(D.gapT>0){
     D.gapT -= dt;
     if(D.gapT<=0){
@@ -3458,7 +3439,8 @@ function updateDash(dt){
     forkImpact(D);                       // 着地で突き刺す
     if(D.left>0){ D.left--; D.gapT=0.1; }
     else {
-      if(D.evo) state.iframe = Math.max(state.iframe, 0.55);   // 進化：着地後も無敵が続く
+      // 進化：着地後も少しの間だけダメージカットが続く（無敵ではない・突進の合間に必ず切れる）。
+      if(D.evo){ state.cutT = Math.max(state.cutT, 0.5); state.cutAmt = 0.6; }
       state.dash = null;
     }
   }
@@ -3537,6 +3519,7 @@ function updateProjectiles(dt){
       p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt;
       if(p.life<=0) dead=true;
       else if(hitScan(p, i, p.dmg, null, false)){
+        if(p.split>0) spawnKnifeSplit(p);            // 当たると小さなナイフに分かれて飛び散る
         if(p.bounce>0){                              // 反射ナイフ：近くの敵へ跳ね返る
           const t=nearestUnhit(p, 270);
           if(t>=0){
@@ -3560,6 +3543,28 @@ function updateProjectiles(dt){
     }
     if(dead) projs.removeAt(i);
   }
+}
+/* ナイフの分裂：当たった位置から、進行方向を中心に扇状の小ナイフを撒く。
+   分かれたナイフはそれ以上は分裂・反射しない（増えすぎないように）。 */
+function spawnKnifeSplit(p){
+  const n = Math.max(0, Math.round(p.split));
+  if(n<=0) return;
+  const base = Math.atan2(p.vy, p.vx);
+  const sp = Math.hypot(p.vx, p.vy) || 360;
+  const spread = 0.55;                               // 扇の半幅（ラジアン）
+  for(let q=0;q<n;q++){
+    const c = projs.spawn(); if(!c) break;
+    const t = n>1 ? (q/(n-1) - 0.5) : 0;
+    const a = base + t*spread*2 + (Math.random()-0.5)*0.18;
+    c.mode=0; c.x=p.x; c.y=p.y; c.ang=a;
+    c.vx=Math.cos(a)*sp*0.92; c.vy=Math.sin(a)*sp*0.92;
+    c.r=Math.max(3, p.r*0.82); c.dmg=p.dmg*0.6; c.pierce=0; c.split=0; c.bounce=0;
+    c.life=Math.max(0.35, p.life*0.65); c.wid=p.wid;
+    c.hitIds.clear();
+    for(const e of p.hitIds) c.hitIds.add(e);         // 直前に当てた敵は多重ヒットしない
+    c.look=p.look||''; c.zcol='';
+  }
+  AU.play('knife_throw', 0.15);
 }
 /* まだ当てていない最寄りの敵（反射ナイフ用） */
 function nearestUnhit(p, range){
@@ -4020,7 +4025,7 @@ function updateEnemies(dt){
     // プレイヤーへの接触（消えている間とワープ予兆中は当たらない）
     if(e.dmg>0 && !(e.ai==='warper' && e.st>0) && !(e.ai==='rusher' && e.st===1)){
       dx=state.px-e.x; dy=state.py-e.y; dist=Math.hypot(dx,dy)||1;
-      if(dist < e.r+CFG.PLAYER_R && !state.dash){
+      if(dist < e.r+CFG.PLAYER_R){
         hurtPlayer(e.dmg);
         if(state.mode!=='play') return;
       }
@@ -4880,6 +4885,7 @@ function step(dt){
   }
   state.gaugeGain = Math.max(0, state.gaugeGain - state.gaugeGain*Math.min(1, dt*6));
   if(state.iframe>0) state.iframe-=dt;
+  if(state.cutT>0) state.cutT-=dt;
   if(state.shake>0) state.shake=Math.max(0,state.shake-dt*26);
   if(state.shieldT>0) state.shieldT-=dt;
   if(state.flashT>0) state.flashT-=dt;
@@ -5250,8 +5256,8 @@ function render(){
       const ox=state.px-cx+Math.cos(a)*rr, oy=state.py-cy+Math.sin(a)*rr;
       ctx.save(); ctx.translate(ox,oy);
       ctx.globalAlpha = 0.45 + wear*0.55;
-      if(w.id==='lid' && SPR_OK('w_pan')){
-        // フライパンシールド。絵は柄が下向きなので、柄が自分のほうを向くように回す。
+      if(w.id==='oban' && SPR_OK('w_pan')){
+        // フライパン。絵は柄が下向きなので、柄が自分のほうを向くように回す。
         ctx.rotate(a + Math.PI/2);
         const S = s.size*2.6;
         ctx.drawImage(SPR.w_pan, -S/2, -S*0.42, S, S);
@@ -7164,7 +7170,7 @@ function startRun(){
   spawnAcc:0, giftT:0, midCount:0, rouletteLeft:0, exPending:0, shield:0, shieldMax:0, shieldT:0,
     arena:null, bossRef:null,          // ボス戦で力尽きたとき、輪が次のランに残っていた
   kpsWindow:[], kpsBest:0, kpsNow:0, shake:0, flashT:0, flashG:0,
-    bannerText:'', bannerT:0, lastHeal:-99, lastVac:-99, dash:null, cards:[], hits:0
+    bannerText:'', bannerT:0, lastHeal:-99, lastVac:-99, dash:null, cutT:0, cutAmt:0, cards:[], hits:0
   });
   slotSig='';
   // 出撃時は全ての画面を閉じる（どこから呼ばれても確実に戦闘に入れるように）

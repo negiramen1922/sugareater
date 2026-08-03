@@ -11,7 +11,7 @@ R.ok(ev('!WEAPONS.oban.guardHp'), 'フライパンは guardHp を持たない');
 // フライパン単体を装備し、回転リングの上（半径の位置）に敵を置いて 1 フレーム回す。
 // phase=0 のとき先頭の羽根は角度0＝(px+radius, py) に来るので、そこへ敵を置けば確実に当たる。
 ev(`(function(){
-  var w={id:'oban',lv:8,phase:0,evolved:false,mods:{dmg:0,count:0,spd:0,area:0}};
+  var w={id:'oban',lv:8,step:7,phase:0,evolved:false,mods:{dmg:0,count:0,spd:0,area:0}};
   state.weapons=[w];
   var st=weaponStat(w);
   enemies.clear();

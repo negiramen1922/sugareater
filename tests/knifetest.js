@@ -9,21 +9,22 @@ R.eq(ev('WEAPONS.knife.pierce'), 0, '素のナイフは貫通 0');
 R.eq(ev('WEAPONS.knife.split'), 0, '素のナイフは分裂 0');
 R.eq(ev('WEAPONS.knife.trait'), '分裂', 'ナイフの特性は分裂');
 
-// レベルごとの分裂数を weaponStat で確認（META 強化の影響を消すため wp.lv=0）。
-function splitAt(lv) {
+// レベルアップ札を step 段とったときの分裂数を weaponStat で確認
+// （Model A：lvUp の進み具合は w.step が持つ。META 強化の影響を消すため wp.lv=0）。
+function splitAt(step) {
   return ev(`(function(){ if(META.wp.knife) META.wp.knife.lv=0;
-    var w={id:'knife',lv:${lv},evolved:false,mods:{dmg:0,count:0,spd:0,area:0}};
+    var w={id:'knife',lv:1+${step},step:${step},evolved:false,mods:{dmg:0,count:0,spd:0,area:0}};
     return Math.round(weaponStat(w).split); })()`);
 }
-R.eq(splitAt(1), 0, 'Lv1 の分裂は 0');
-R.eq(splitAt(3), 1, 'Lv3 の分裂は 1');
-R.eq(splitAt(6), 2, 'Lv6 の分裂は 2');
-R.eq(splitAt(8), 3, 'Lv8 の分裂は 3');
+R.eq(splitAt(0), 0, 'step0 の分裂は 0');
+R.eq(splitAt(2), 1, 'step2 の分裂は 1');
+R.eq(splitAt(5), 2, 'step5 の分裂は 2');
+R.eq(splitAt(7), 3, 'step7（全段）の分裂は 3');
 
 // pierce はレベルを上げても増えない（分裂に置き換わったので）。
 R.eq(ev(`(function(){ if(META.wp.knife) META.wp.knife.lv=0;
-  var w={id:'knife',lv:8,evolved:false,mods:{dmg:0,count:0,spd:0,area:0}};
-  return weaponStat(w).pierce; })()`), 0, 'Lv8 でも貫通は 0 のまま');
+  var w={id:'knife',lv:8,step:7,evolved:false,mods:{dmg:0,count:0,spd:0,area:0}};
+  return weaponStat(w).pierce; })()`), 0, 'step7 でも貫通は 0 のまま');
 
 // spawnKnifeSplit：split=2 のナイフが当たると子ナイフが 2本生まれる。
 const spawned = ev(`(function(){

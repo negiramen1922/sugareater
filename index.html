@@ -2548,6 +2548,7 @@ function spawnEnemy(typeOverride, atx, aty, gen, hpMul, elite){
   e.flash=0; e.wob=Math.random()*6.28; e.st=0; e.stT=0;
   e.gen=gen||0; e.fireT=Math.random()*2; e.slowT=0; e.coatT=0; e.zoneT=-99; e.dead=false;
   e.dotT=0; e.dotTick=0; e.dotDmg=0; e.face=Math.random()*6.28; e.ph=0; e.bt=0; e.soft=0; e.atkT=0; e.shootT=0; e.atkCd=0; e.killedBy='';
+  e.pat=0; e.patT=0; e.ripLeft=0; e.dashX=0; e.dashY=0; e.cph=1;   // ボスの攻撃サイクルを使い回し時に必ず初期化
   e.dying=false; e.dyingT=0; e.blastT=0;
   e.hitT.fill(-99);
   return e;
@@ -2674,7 +2675,10 @@ function setTestPassive(id, d){
 function bossPhaseLabel(){
   const b = state.bossRef; if(!b || !b.maxhp) return '';
   const hpr = b.hp/b.maxhp;
-  const ph = hpr>0.7 ? 1 : (hpr>0.35 ? 2 : 3);
+  // 将軍はHP帯の境目が違う（50%/20%）。他のボスは従来どおり（70%/35%）。
+  const ph = b.type==='captain'
+    ? (hpr>0.5 ? 1 : (hpr>0.2 ? 2 : 3))
+    : (hpr>0.7 ? 1 : (hpr>0.35 ? 2 : 3));
   return `第${ph}フェーズ（HP ${Math.round(hpr*100)}%）`;
 }
 function setTestBossHp(r){
@@ -2693,7 +2697,7 @@ function renderTestPanel(){
   if(bossTest){
     $('tp-bosses').innerHTML = BOSS_TEST_IDS.map(id=>
       `<button class="tp-chip${state.testBoss===id?' on':''}" data-boss="${id}">${ENEMIES[id].name}</button>`).join('');
-    const HPSET = [['第1 (100%)',1.0],['第2 (55%)',0.55],['第3 (20%)',0.20]];
+    const HPSET = [['第1 (100%)',1.0],['第2 (40%)',0.40],['第3 (15%)',0.15]];
     $('tp-bosshp').innerHTML = HPSET.map(([lb,r])=>
       `<button class="tp-chip" data-hp="${r}">${lb}</button>`).join('')
       + `<span class="tp-pv" style="width:100%;text-align:left;color:#7fd4ff">${bossPhaseLabel()}</span>`;
@@ -4238,6 +4242,7 @@ function updateEnemies(dt){
 }
 /* 近接型ボス（クッキー隊長）：追う → 溜める → 突進 → 放射弾 */
 function bossMelee(e, d, dt, nx, ny, dist, sp){
+  if(e.type==='captain') return bossCaptain(e, d, dt, nx, ny, dist, sp);
   e.patT -= dt; e.bt -= dt;
   if(e.pat===0){
     if(dist > e.r*0.9){ e.x += nx*sp*dt; e.y += ny*sp*dt; }
@@ -4286,6 +4291,75 @@ function throwAxe(e, ang){
   b.vx=Math.cos(ang)*250; b.vy=Math.sin(ang)*250;
   b.r=15; b.dmg=ENEMIES.captain.bDmg*1.6; b.life=3.2; b.axe=1; b.spin=Math.random()*6.28;
   AU.play('e_lunge', 0);
+}
+
+/* クッキー将軍の専用サイクル。HP帯で手数が変わる。
+   ・第1（HP 100–50%）：突進 → 波紋1回
+   ・第2（HP 50–20%）：突進 → 波紋2回 ＋ 斧投げ
+   ・第3（HP 20%以下）：突進 → 波紋3回 → 斧投げ → 投げた場所へ高速移動して着地衝撃
+   波紋は放射状のばら撒き（bossRing）を、少し間を置いて連続で出す。 */
+function bossCaptain(e, d, dt, nx, ny, dist, sp){
+  e.patT -= dt; e.bt -= dt;
+  const hpr = e.hp/e.maxhp;
+  const cph = hpr>0.5 ? 1 : (hpr>0.2 ? 2 : 3);   // HP帯：1=100–50 / 2=50–20 / 3=20–
+  e.cph = cph;
+
+  if(e.pat===0){                                 // 接近
+    if(dist > e.r*0.9){ e.x += nx*sp*dt; e.y += ny*sp*dt; }
+    if(e.patT<=0){ e.pat=1; e.patT=1.28; e.wx=nx; e.wy=ny; }
+  }
+  else if(e.pat===1){                            // 溜め→突進（予告線は drawChargeWarn 担当）
+    if(e.patT>0.46){
+      const k=1.6*dt;                            // 狙いをゆっくり補正（完全追尾はしない）
+      e.wx+=(nx-e.wx)*k; e.wy+=(ny-e.wy)*k;
+      const m=Math.hypot(e.wx,e.wy)||1; e.wx/=m; e.wy/=m;
+      if(e.patT>1.24) AU.play('e_lunge', 0);
+    } else {
+      e.x += e.wx*sp*8.4*dt; e.y += e.wy*sp*8.4*dt;   // 突進本体
+    }
+    if(e.patT<=0){                               // 突進おわり → 波紋シーケンスへ
+      e.pat=3; e.ripLeft=cph; e.bt=0;
+      state.shake=Math.min(11, state.shake+4);
+    }
+  }
+  else if(e.pat===3){                            // 波紋 ×cph（少し間を置いて連続）
+    if(e.bt<=0 && e.ripLeft>0){
+      bossRing(e, d, 14, Math.random()*6.283);
+      e.ripLeft--; e.bt=0.32;
+      state.shake=Math.min(10, state.shake+2);
+    }
+    if(e.ripLeft<=0 && e.bt<=0){
+      if(cph>=2){ e.pat=4; e.patT=0.5; e.bt=0.14; }   // 斧投げへ（第2から）
+      else { e.pat=6; e.patT=0.9; }                    // 第1は硬直→ループ
+    }
+  }
+  else if(e.pat===4){                            // 斧投げ（第2から）
+    if(e.bt<=0 && e.bt>-900){
+      const a0=Math.atan2(state.py-e.y, state.px-e.x);
+      const n = cph>=3 ? 3 : 1;                        // 第3は3本の扇
+      for(let k=0;k<n;k++) throwAxe(e, a0+(k-(n-1)/2)*0.36);
+      e.dashX=state.px; e.dashY=state.py;              // 「そこ」＝投げた瞬間の自機位置
+      e.bt=-1000;
+    }
+    if(e.patT<=0){
+      if(cph>=3){ e.pat=5; e.patT=0.8; }               // 斧のあと、その場所へ高速移動（第3のみ）
+      else { e.pat=6; e.patT=0.9; }
+    }
+  }
+  else if(e.pat===5){                            // 高速移動：投げた場所へ突っ込む
+    const ddx=e.dashX-e.x, ddy=e.dashY-e.y, dd=Math.hypot(ddx,ddy)||1;
+    const step=sp*10*dt;
+    e.x += ddx/dd*Math.min(dd, step);
+    e.y += ddy/dd*Math.min(dd, step);
+    if(dd<26 || e.patT<=0){                            // 到達 or 時間切れ → 着地衝撃
+      bossRing(e, d, 16, Math.random()*6.283);
+      state.shake=Math.min(12, state.shake+5);
+      e.pat=6; e.patT=0.8;
+    }
+  }
+  else {                                         // 硬直 → 最初へ（下位フェーズほど短い）
+    if(e.patT<=0){ e.pat=0; e.patT = cph>=3 ? 0.7 : cph>=2 ? 1.1 : 1.6; }
+  }
 }
 
 /* 突進の予告線。溜めているあいだ、進む先に赤い帯が伸びる。 */

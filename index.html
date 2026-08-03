@@ -528,9 +528,9 @@ img.spr{display:inline-block;vertical-align:middle;image-rendering:pixelated;
   <div class="tp-body">
     <div class="tp-row"><span class="tp-lb">プレイヤー無敵</span>
       <button id="tp-invuln" class="tp-tog">ON</button></div>
-    <div class="tp-lb">ボスを切替（無敵・攻撃ループ）</div>
+    <div class="tp-lb" id="tp-lb-boss">ボスを切替（無敵・攻撃ループ）</div>
     <div id="tp-bosses" class="tp-chips"></div>
-    <div class="tp-lb">ボスHPを設定（HPで行動が変わる）</div>
+    <div class="tp-lb" id="tp-lb-hp">ボスHPを設定（HPで行動が変わる）</div>
     <div id="tp-bosshp" class="tp-chips"></div>
     <div class="tp-lb">パッシブ Lv（±1で調整）</div>
     <div id="tp-passives"></div>
@@ -545,7 +545,8 @@ img.spr{display:inline-block;vertical-align:middle;image-rendering:pixelated;
   <p class="tagline">食べる側と、食べられる側</p>
   <p class="tagline" style="font-size:11px;color:#8fd48a;letter-spacing:.18em">
     BUILD 41 / 0729 &nbsp;·&nbsp; 闘技場600・ステージ4/5</p>
-  <button class="btn" id="btn-start">はじめる</button>
+  <button class="btn" id="btn-start">ゲームスタート</button>
+  <button class="btn ghost" id="btn-test">テストモード</button>
   <p class="tagline" style="font-size:11px;letter-spacing:.12em;color:#5c5048;line-height:2">
     移動：WASD / 方向キー / 画面ドラッグ<br>攻撃はすべて自動。移動だけに集中してください。
   </p>
@@ -2624,14 +2625,38 @@ function spawnTestBoss(id){
   banner(d.name + '（テスト）', '#b98cff');
   AU.play('boss_appear'); BGM.start('boss');
 }
+// 編成した武器を「厨房で設定したレベルまで作り込んだ状態」で持たせる。
+// 威力・数は weaponStat が META.wp[id].lv から算出するので、meta レベルを上げるだけで
+// テスト戦の武器も強くなる。ここでは step（強化段階）と進化を meta レベルに合わせる。
+function giveTestLoadout(){
+  for(const wid of META.loadout){
+    const d = WEAPONS[wid]; if(!d) continue;
+    if(state.weapons.some(w=>w.id===wid)) continue;
+    const mlv = Math.max(1, (META.wp[wid] && META.wp[wid].lv) || 1);
+    const maxStep = d.lvUp ? d.lvUp.length : 0;
+    const w = {id:wid, lv:mlv, step:Math.min(maxStep, mlv-1),
+               cd:0, phase:0, burst:0, burstT:0, mods:{dmg:0,count:0,spd:0,area:0}};
+    if(mlv>=WEAPON_MAX_LV && d.evo){ w.evolved = true; w.lv = WEAPON_MAX_LV; }
+    state.weapons.push(w);
+  }
+}
 function startBossTest(id){
   startRun();                              // 通常の初期化（プレイヤー・カメラ・HUD）を通す
   state.testMode = true;
   state.testInvuln = true;                 // 動き確認しやすいよう既定で無敵
-  for(const wid of META.loadout)           // 編成武器をLv1で与えて攻撃も見えるように
-    if(WEAPONS[wid] && !state.weapons.some(w=>w.id===wid))
-      state.weapons.push({id:wid, lv:1, step:0, cd:0, phase:0, burst:0, burstT:0, mods:{dmg:0,count:0,spd:0,area:0}});
+  giveTestLoadout();                       // 設定したレベルの編成武器を持って攻撃も見える
   spawnTestBoss(id);
+  renderTestPanel();
+  $('testpanel').classList.remove('hidden');
+}
+// ステージテスト：選んだステージを無敵で出撃。ウェーブもボスも通常どおり進む
+// （testMode は立てない＝ウェーブ進行を止めない。無敵は testInvuln で確保）。
+function startStageTest(id){
+  if(id && STAGES[id]) STAGE = STAGES[id];
+  startRun();
+  state.testInvuln = true;                 // パネルで切替できる無敵
+  giveTestLoadout();
+  banner((STAGE.name||'ステージ') + '（テスト）', '#8fd48a');
   renderTestPanel();
   $('testpanel').classList.remove('hidden');
 }
@@ -2661,12 +2686,18 @@ function renderTestPanel(){
   const tp = $('testpanel'); if(!tp) return;
   $('tp-invuln').textContent = state.testInvuln ? 'ON' : 'OFF';
   $('tp-invuln').classList.toggle('off', !state.testInvuln);
-  $('tp-bosses').innerHTML = BOSS_TEST_IDS.map(id=>
-    `<button class="tp-chip${state.testBoss===id?' on':''}" data-boss="${id}">${ENEMIES[id].name}</button>`).join('');
-  const HPSET = [['第1 (100%)',1.0],['第2 (55%)',0.55],['第3 (20%)',0.20]];
-  $('tp-bosshp').innerHTML = HPSET.map(([lb,r])=>
-    `<button class="tp-chip" data-hp="${r}">${lb}</button>`).join('')
-    + `<span class="tp-pv" style="width:100%;text-align:left;color:#7fd4ff">${bossPhaseLabel()}</span>`;
+  // ボスの切替・HP操作はボス単体テストのときだけ出す（ステージテストでは隠す）
+  const bossTest = !!state.testBoss;
+  for(const id of ['tp-lb-boss','tp-bosses','tp-lb-hp','tp-bosshp'])
+    $(id).classList.toggle('hidden', !bossTest);
+  if(bossTest){
+    $('tp-bosses').innerHTML = BOSS_TEST_IDS.map(id=>
+      `<button class="tp-chip${state.testBoss===id?' on':''}" data-boss="${id}">${ENEMIES[id].name}</button>`).join('');
+    const HPSET = [['第1 (100%)',1.0],['第2 (55%)',0.55],['第3 (20%)',0.20]];
+    $('tp-bosshp').innerHTML = HPSET.map(([lb,r])=>
+      `<button class="tp-chip" data-hp="${r}">${lb}</button>`).join('')
+      + `<span class="tp-pv" style="width:100%;text-align:left;color:#7fd4ff">${bossPhaseLabel()}</span>`;
+  }
   $('tp-passives').innerHTML = PASSIVE_LIST.map(id=>{
     const d=PASSIVES[id], lv=state.passives[id]||0;
     return `<div class="tp-prow"><span class="tp-pn">${d.icon} ${d.name}</span>
@@ -7209,8 +7240,10 @@ function renderDevTab(){
           style="border-color:#b98cff;color:#b98cff">${v===0?'未所持':'Lv'+v}</button>`).join('')}</div>
     </div></div>`;
   $('k-note').innerHTML = '<b style="color:#b98cff">テストモード</b>　'
-    + '武器・装備・キャラのレベルを一括で設定できます。設計図は999枚に、砂糖も好きなだけ足せます。'
-    + '<br>装備はレアリティごとに別物なので、設定したレアリティが自動で装着されます。';
+    + '武器・装備・キャラのレベルを自由に設定してから、ボス戦かステージを無敵で試せます。'
+    + '設計図は999枚に、砂糖も好きなだけ足せます。'
+    + '<br>装備はレアリティごとに別物なので、設定したレアリティが自動で装着されます。'
+    + '編成した武器は、設定したレベルまで作り込んだ状態でテスト戦に持ち込みます。';
   $('k-list').innerHTML =
       row('全武器のレベル', 'wp')
     + row('全キャラのレベル', 'ch')
@@ -7231,6 +7264,14 @@ function renderDevTab(){
           `<button class="eqchip" data-k="bosstest" data-boss="${id}"
              style="border-color:#7fd4ff;color:#7fd4ff">${ENEMIES[id].name}</button>`).join('')}
         </div></div></div>`
+    + `<div class="wcard" style="border-left-color:#8fd48a">
+        <span class="ic">🎮</span>
+        <div class="mid"><div class="nm">ステージをテスト</div>
+        <div class="eff" style="color:#5f544c">選んだステージを無敵で出撃します。ウェーブもボスも通常どおり進むので、設定した編成でステージ全体を試せます。戦闘中のパネルで無敵の切替やパッシブ調整ができます。</div>
+        <div class="eqrow">${Object.values(STAGES).map(st=>
+          `<button class="eqchip" data-k="stagetest" data-stage="${st.id}"
+             style="border-color:#8fd48a;color:#8fd48a">${st.idx}. ${st.name}</button>`).join('')}
+        </div></div></div>`
     + `<div class="wcard" style="border-left-color:#e8434f">
         <span class="ic">🗑️</span>
         <div class="mid"><div class="nm">進行をリセット</div>
@@ -7240,6 +7281,8 @@ function renderDevTab(){
   $('k-list').querySelectorAll('.eqchip[data-k]').forEach(b=>{
     if(b.dataset.k==='bosstest')
       b.addEventListener('click', ()=>{ AU.play('ui'); startBossTest(b.dataset.boss); });
+    else if(b.dataset.k==='stagetest')
+      b.addEventListener('click', ()=>{ AU.play('ui'); startStageTest(b.dataset.stage); });
     else
       b.addEventListener('click', ()=> devSet(b.dataset.k, +b.dataset.v, b.dataset.r));
   });
@@ -7495,6 +7538,9 @@ $('mute').addEventListener('click', ()=>{
   addEventListener(ev, ()=>AU.resume(), {once:true}));
 
 $('btn-start').addEventListener('click', showKitchen);
+$('btn-test').addEventListener('click', ()=>{         // タイトル→テストモード（DEVタブ直行）
+  showKitchen(); kTab='dev'; swapFrom=null; kDetail=null; renderKitchen();
+});
 $('btn-retry').addEventListener('click', showKitchen);
 $('btn-sortie').addEventListener('click', ()=>{ AU.play('ui'); startRun(); });
 $('btn-dev').addEventListener('click', ()=>{

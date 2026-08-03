@@ -2084,7 +2084,7 @@ const projs   = makePool(CFG.MAX_PROJ, ()=>({
   cluster:0, dot:0, hitGapT:0, look:'', zcol:'',
   blast:0, zdps:0, zlife:0, zr:0, slow:0, pull:0, pullN:0
 }));
-const ebul  = makePool(CFG.MAX_EBULLET, ()=>({x:0,y:0,vx:0,vy:0,r:5,dmg:0,life:0,axe:0,arrow:0,spin:0,t:0,home:0,split:0,blob:0,big:0}));
+const ebul  = makePool(CFG.MAX_EBULLET, ()=>({x:0,y:0,vx:0,vy:0,r:5,dmg:0,life:0,axe:0,arrow:0,spin:0,t:0,home:0,split:0,blob:0,big:0,stuck:0}));
 const gems  = makePool(CFG.MAX_GEMS, ()=>({x:0,y:0,vx:0,vy:0,val:1,pull:false,t:0,kind:0}));
 const dmgs  = makePool(CFG.MAX_DMG, ()=>({x:0,y:0,vy:0,txt:'',life:0,crit:false,sh:false,miss:false}));
 const parts = makePool(CFG.MAX_PART, ()=>({x:0,y:0,vx:0,vy:0,life:0,max:0,r:0,c:'#fff',ring:false,spr:''}));
@@ -2548,7 +2548,7 @@ function spawnEnemy(typeOverride, atx, aty, gen, hpMul, elite){
   e.flash=0; e.wob=Math.random()*6.28; e.st=0; e.stT=0;
   e.gen=gen||0; e.fireT=Math.random()*2; e.slowT=0; e.coatT=0; e.zoneT=-99; e.dead=false;
   e.dotT=0; e.dotTick=0; e.dotDmg=0; e.face=Math.random()*6.28; e.ph=0; e.bt=0; e.soft=0; e.atkT=0; e.shootT=0; e.atkCd=0; e.killedBy='';
-  e.pat=0; e.patT=0; e.ripLeft=0; e.dashX=0; e.dashY=0; e.cph=1;   // ボスの攻撃サイクルを使い回し時に必ず初期化
+  e.pat=0; e.patT=0; e.ripLeft=0; e.dashX=0; e.dashY=0; e.cph=1; e.sub=0; e.gph=0;   // ボスの攻撃サイクルを使い回し時に必ず初期化
   e.dying=false; e.dyingT=0; e.blastT=0;
   e.hitT.fill(-99);
   return e;
@@ -2675,8 +2675,9 @@ function setTestPassive(id, d){
 function bossPhaseLabel(){
   const b = state.bossRef; if(!b || !b.maxhp) return '';
   const hpr = b.hp/b.maxhp;
-  // 将軍はHP帯の境目が違う（50%/20%）。他のボスは従来どおり（70%/35%）。
-  const ph = b.type==='captain'
+  // 将軍・ジンジャーはHP帯の境目が違う（50%/20%）。他のボスは従来どおり（70%/35%）。
+  const custom = b.type==='captain' || b.type==='ginger';
+  const ph = custom
     ? (hpr>0.5 ? 1 : (hpr>0.2 ? 2 : 3))
     : (hpr>0.7 ? 1 : (hpr>0.35 ? 2 : 3));
   return `第${ph}フェーズ（HP ${Math.round(hpr*100)}%）`;
@@ -4285,11 +4286,14 @@ function bossMelee(e, d, dt, nx, ny, dist, sp){
   }
 }
 /* 斧投げ：回転しながら飛び、途中で戻ってくる */
+const AXE_SPEED = 175;                 // 移動はゆっくり
 function throwAxe(e, ang){
   const b = ebul.spawn(); if(!b) return;
   b.x=e.x; b.y=e.y;
-  b.vx=Math.cos(ang)*250; b.vy=Math.sin(ang)*250;
-  b.r=15; b.dmg=ENEMIES.captain.bDmg*1.6; b.life=3.2; b.axe=1; b.spin=Math.random()*6.28;
+  b.vx=Math.cos(ang)*AXE_SPEED; b.vy=Math.sin(ang)*AXE_SPEED;
+  b.r=22; b.dmg=ENEMIES.captain.bDmg*1.6; b.life=99; b.axe=1; b.stuck=0; b.t=0;
+  b.spin=Math.random()*6.28;
+  b.arrow=0; b.home=0; b.split=0; b.blob=0; b.big=0;
   AU.play('e_lunge', 0);
 }
 
@@ -4338,15 +4342,22 @@ function bossCaptain(e, d, dt, nx, ny, dist, sp){
       const a0=Math.atan2(state.py-e.y, state.px-e.x);
       const n = cph>=3 ? 3 : 1;                        // 第3は3本の扇
       for(let k=0;k<n;k++) throwAxe(e, a0+(k-(n-1)/2)*0.36);
-      e.dashX=state.px; e.dashY=state.py;              // 「そこ」＝投げた瞬間の自機位置
+      // 「そこ」＝中央の斧が地面に突き刺さる地点（飛行1.0秒 ×速度）
+      e.dashX = e.x + Math.cos(a0)*AXE_SPEED*1.0;
+      e.dashY = e.y + Math.sin(a0)*AXE_SPEED*1.0;
       e.bt=-1000;
     }
     if(e.patT<=0){
-      if(cph>=3){ e.pat=5; e.patT=0.8; }               // 斧のあと、その場所へ高速移動（第3のみ）
+      if(cph>=3){ e.pat=7; e.patT=1.4; }               // 斧が刺さるのを待って、その場で溜め（第3のみ）
       else { e.pat=6; e.patT=0.9; }
     }
   }
-  else if(e.pat===5){                            // 高速移動：投げた場所へ突っ込む
+  else if(e.pat===7){                            // 斧が地面に刺さったあと、その場でチャージ → 突進
+    const ddx=e.dashX-e.x, ddy=e.dashY-e.y, dm=Math.hypot(ddx,ddy)||1;
+    e.wx=ddx/dm; e.wy=ddy/dm;                          // 突進方向（予告帯の描画に使う）
+    if(e.patT<=0){ e.pat=5; e.patT=0.7; AU.play('e_lunge',0); }
+  }
+  else if(e.pat===5){                            // 高速移動：刺さった斧へ突っ込む
     const ddx=e.dashX-e.x, ddy=e.dashY-e.y, dd=Math.hypot(ddx,ddy)||1;
     const step=sp*10*dt;
     e.x += ddx/dd*Math.min(dd, step);
@@ -4366,6 +4377,28 @@ function bossCaptain(e, d, dt, nx, ny, dist, sp){
 function drawChargeWarn(e, cx, cy){
   const d = ENEMIES[e.type];
   if(!d) return;
+  // クッキー将軍：斧のあとの溜め → 刺さった斧へ向かう突進の予告帯
+  if(e.type==='captain' && e.pat===7){
+    const ang = Math.atan2(e.wy, e.wx);
+    const dm = Math.hypot(e.dashX-e.x, e.dashY-e.y)||1;
+    const k = Math.max(0, Math.min(1, 1 - e.patT/1.4));
+    const L = Math.min(dm+40, 60 + dm*k);
+    ctx.save();
+    ctx.translate(e.x-cx, e.y-cy);
+    ctx.rotate(ang);
+    ctx.globalAlpha = 0.16 + k*0.24;
+    ctx.fillStyle = '#e8434f';
+    ctx.fillRect(0, -e.r*0.82, L, e.r*1.64);
+    ctx.globalAlpha = 0.5 + Math.sin(state.t*30)*0.25;
+    ctx.strokeStyle = '#ff5f8d'; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(0,-e.r*0.82); ctx.lineTo(L,-e.r*0.82);
+    ctx.moveTo(0, e.r*0.82); ctx.lineTo(L, e.r*0.82);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    return;
+  }
   const isCharge = d.pattern==='charge', isBear = d.pattern==='bear';
   if(!isCharge && !isBear) return;                    // 突進するボスだけ
   const tell = isBear ? 0.42 : 0.46;
@@ -4798,6 +4831,7 @@ function slamImpact(e, d){
    ・移動しか操作しないゲームなので、弾は「読めて避けられる」ことを最優先にする
    ・弾速は自機速度より遅く、必ず隙間を用意する */
 function bossDanmaku(e, d, dt, nx, ny, dist, sp){
+  if(e.type==='ginger') return bossGinger(e, d, dt, nx, ny, dist, sp);
   e.patT -= dt;
   e.bt   -= dt;
   // 常に一定の距離を保って動く（貼りつかれると弾幕が成立しない）
@@ -4853,6 +4887,101 @@ function bossShot(e, d, ang){
   b.x=e.x; b.y=e.y;
   b.vx=Math.cos(ang)*d.bSpeed; b.vy=Math.sin(ang)*d.bSpeed;
   b.r=7; b.dmg=d.bDmg; b.life=5;
+  b.axe=0; b.arrow=0; b.home=0; b.split=0; b.blob=0; b.big=0; b.stuck=0;   // 使い回しの残りフラグを消す
+}
+/* 中弾幕：大きめで遅い弾。二重の輪郭で見分けられる。 */
+function bossShotMed(e, d, ang){
+  AU.play('boss_shot');
+  const b=ebul.spawn(); if(!b) return;
+  b.x=e.x; b.y=e.y;
+  b.vx=Math.cos(ang)*d.bSpeed*0.7; b.vy=Math.sin(ang)*d.bSpeed*0.7;
+  b.r=12; b.dmg=d.bDmg*1.4; b.life=6; b.big=1;
+  b.axe=0; b.arrow=0; b.home=0; b.split=0; b.blob=0; b.stuck=0;
+}
+
+/* ジンジャージェネラルの専用サイクル。HP帯ごとに決まった手順をループする。
+   ・第1（100–50%）：自分の周囲に波紋×3連続 → ねじれ2方向の回転弾幕
+   ・第2（50–20%）：ねじれ2方向の回転弾幕 → 直後に4方向ビーム → 自機狙い5連扇×5
+   ・第3（20%以下）：ねじれ弾幕 → 8方向の中弾幕 → 4方向ビーム → 通常＋中弾幕の5連扇セットを自機狙い×6
+   部品はすべて「読めて避けられる」ことを優先（弾速は控えめ・ビームは予告つき）。 */
+function gSpiral(e, d, arms){                    // ねじれ回転弾幕：正回転＋逆回転を重ねる
+  if(e.bt<=0){
+    e.bt = 0.09;
+    e.face += 0.34;
+    for(let k=0;k<arms;k++) bossShot(e, d, e.face + k/arms*6.283);
+    for(let k=0;k<arms;k++) bossShot(e, d, -e.face + k/arms*6.283);
+  }
+}
+function gRipple(e, d){                            // 波紋：自分の周囲へ全周リング
+  bossRing(e, d, 20, Math.random()*6.283);
+}
+function gMedRing(e, d, n){                        // 中弾幕：大きめの弾をn方向へ
+  const off = Math.random()*6.283;
+  for(let k=0;k<n;k++) bossShotMed(e, d, off + k/n*6.283);
+}
+function gBeam4(e, d){                             // 4方向ビーム：十字に固定（追尾なし・予告つき）
+  const base = Math.atan2(state.py-e.y, state.px-e.x);
+  for(let k=0;k<4;k++) fireBeam(e, d, 0, base + k*Math.PI/2, true);
+}
+function gFan(e, d, n, med){                       // 自機狙いの5連扇
+  const a0 = Math.atan2(state.py-e.y, state.px-e.x);
+  for(let k=0;k<n;k++){ const a = a0 + (k-(n-1)/2)*0.16; med ? bossShotMed(e,d,a) : bossShot(e,d,a); }
+}
+function bossGinger(e, d, dt, nx, ny, dist, sp){
+  e.patT -= dt; e.bt -= dt;
+  const hpr = e.hp/e.maxhp;
+  const cph = hpr>0.5 ? 1 : (hpr>0.2 ? 2 : 3);
+  e.cph = cph;
+
+  // 一定距離を保って動く（貼りつかれると弾幕が成立しない）
+  const mv = d.speed, want = 175;
+  if(dist > want+50){ e.x += nx*mv*dt; e.y += ny*mv*dt; }
+  else if(dist < want-50){ e.x -= nx*mv*dt; e.y -= ny*mv*dt; }
+  else { e.x += -ny*mv*0.55*dt; e.y += nx*mv*0.55*dt; }
+
+  const SPIRAL = 2.4, BEAMWAIT = 1.9;
+  const adv  = (dur)=>{ e.pat++;  e.sub=0; e.bt=0; e.patT=dur||0; };
+  const loop = (dur)=>{ e.pat=0;  e.sub=0; e.bt=0; e.patT=dur||0; };
+
+  // フェーズが切り替わったら手順を先頭から
+  if(e.gph!==cph){ e.gph=cph; e.pat=0; e.sub=0; e.bt=0; e.patT=(cph===1?0:SPIRAL); }
+
+  if(cph===1){
+    if(e.pat===0){                               // 波紋×3連続
+      if(e.bt<=0 && e.sub<3){ gRipple(e,d); e.sub++; e.bt=0.55; }
+      if(e.sub>=3 && e.bt<=0) adv(SPIRAL);
+    } else {                                     // ねじれ2方向 回転弾幕
+      gSpiral(e, d, 2);
+      if(e.patT<=0) loop(0);
+    }
+  }
+  else if(cph===2){
+    if(e.pat===0){                               // ねじれ2方向 回転弾幕
+      gSpiral(e, d, 2);
+      if(e.patT<=0) adv(0);
+    } else if(e.pat===1){                        // 4方向ビーム
+      if(e.sub===0){ gBeam4(e,d); e.sub=1; e.patT=BEAMWAIT; }
+      if(e.patT<=0) adv(0);
+    } else {                                     // 自機狙い5連扇×5
+      if(e.bt<=0 && e.sub<5){ gFan(e,d,5,false); e.sub++; e.bt=0.45; }
+      if(e.sub>=5 && e.bt<=0) loop(SPIRAL);
+    }
+  }
+  else {
+    if(e.pat===0){                               // ねじれ弾幕（濃いめ3方向）
+      gSpiral(e, d, 3);
+      if(e.patT<=0) adv(0);
+    } else if(e.pat===1){                        // 8方向 中弾幕（2周）
+      if(e.bt<=0 && e.sub<2){ gMedRing(e,d,8); e.sub++; e.bt=0.7; }
+      if(e.sub>=2 && e.bt<=0) adv(0);
+    } else if(e.pat===2){                        // 4方向ビーム
+      if(e.sub===0){ gBeam4(e,d); e.sub=1; e.patT=BEAMWAIT; }
+      if(e.patT<=0) adv(0);
+    } else {                                     // 通常＋中弾幕の5連扇セットを自機狙い×6
+      if(e.bt<=0 && e.sub<6){ gFan(e,d,5,false); gFan(e,d,5,true); e.sub++; e.bt=0.5; }
+      if(e.sub>=6 && e.bt<=0) loop(SPIRAL);
+    }
+  }
 }
 /* 輪状に撃つ。gap を渡すと、その幅ぶんだけ穴を空ける（必ず抜け道を用意する） */
 function bossRing(e, d, n, offset, gap){
@@ -4944,13 +5073,18 @@ function updateEBullets(dt){
       b.vx += (dx/dd*sp2 - b.vx)*Math.min(1, b.home*dt);
       b.vy += (dy/dd*sp2 - b.vy)*Math.min(1, b.home*dt);
     }
-    if(b.axe){                       // 投げ斧は減速して投げ主へ戻る
-      b.t += dt; b.spin += dt*13;
-      const bs = state.bossRef;
-      if(b.t > 0.85 && bs && !bs.dead){
-        const dx=bs.x-b.x, dy=bs.y-b.y, dd=Math.hypot(dx,dy)||1;
-        b.vx += dx/dd*900*dt; b.vy += dy/dd*900*dt;
-        if(dd < 40){ ebul.removeAt(i); continue; }
+    if(b.axe){                       // 投げ斧：飛んで地面に刺さり、しばらく残る（戻らない）
+      b.t += dt;
+      if(!b.stuck){
+        b.spin += dt*5;              // 回転はゆっくり
+        if(b.t >= 1.0){              // 飛行おわり → 地面に突き刺さる
+          b.stuck=1; b.vx=0; b.vy=0; b.t=0;
+          AU.play('e_boom', 0);
+          state.shake=Math.min(9, state.shake+3);
+        }
+      } else {
+        b.spin += dt*0.5;            // 刺さったらほぼ止まる
+        if(b.t >= 1.5){ ebul.removeAt(i); continue; }   // しばらく残ってから消える
       }
     }
     // おぼんが盾になる。回っている板に当たった弾は弾かれて消える。
@@ -6109,7 +6243,7 @@ function roundRect(x, y, w, h, r){
 function drawBoss(e,x,y,wob){
   const C = e.type==='eclair' ? {a:'#c9873f',b:'#5c3417',c:'#f3ddb5'}
                               : {a:'#f2d98f',b:'#c4762c',c:'#ffe9c2'};
-  const charge = (e.pat===1 && e.patT>0.35) || (e.pat===2);
+  const charge = (e.pat===1 && e.patT>0.35) || (e.pat===2) || (e.type==='captain' && e.pat===7);
   let sc = charge ? 1+Math.sin(state.t*36)*0.06 : 1;
   if(e.dying){
     const k = 1 - e.dyingT/3.4;

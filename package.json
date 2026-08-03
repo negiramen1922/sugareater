@@ -1,0 +1,11 @@
+{
+  "name": "sugareater",
+  "private": true,
+  "description": "Sugar Eater — browser game. Tests use jsdom (see tests/runall.sh).",
+  "scripts": {
+    "test": "bash tests/runall.sh index.html"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  }
+}

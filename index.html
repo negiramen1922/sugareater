@@ -41,6 +41,31 @@ canvas{display:block;position:fixed;inset:0;touch-action:none;}
   font-size:13px;line-height:1;padding:5px 8px;border-radius:2px;cursor:pointer;
   font-family:inherit;margin-left:auto;}
 #btn-dev:hover{border-color:#b98cff;color:#b98cff;}
+/* テストパネル（戦闘中） */
+#testpanel{position:absolute;top:8px;right:8px;z-index:45;width:min(230px,46vw);
+  background:rgba(18,12,20,.92);border:1px solid #b98cff;border-radius:4px;
+  color:#e8dff2;font-size:11px;max-height:88vh;overflow:auto;}
+#testpanel .tp-head{display:flex;align-items:center;justify-content:space-between;
+  padding:5px 8px;background:rgba(185,140,255,.18);font-weight:700;letter-spacing:.08em;}
+#testpanel .tp-head button{background:transparent;border:0;color:#e8dff2;cursor:pointer;font-size:13px;}
+#testpanel .tp-body{padding:7px 8px;display:flex;flex-direction:column;gap:6px;}
+#testpanel.collapsed .tp-body{display:none;}
+#testpanel .tp-row{display:flex;align-items:center;justify-content:space-between;}
+#testpanel .tp-lb{color:#b98cff;font-size:10px;letter-spacing:.06em;}
+#testpanel .tp-chips{display:flex;flex-wrap:wrap;gap:4px;}
+#testpanel .tp-chip{background:transparent;border:1px solid #6a5a80;color:#cfc3e0;
+  border-radius:2px;padding:3px 6px;font-size:10px;cursor:pointer;font-family:inherit;}
+#testpanel .tp-chip.on{border-color:#b98cff;color:#fff;background:rgba(185,140,255,.25);}
+#testpanel .tp-tog{border:1px solid #7fd4a0;color:#7fd4a0;background:transparent;
+  border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit;font-weight:700;}
+#testpanel .tp-tog.off{border-color:#e8737f;color:#e8737f;}
+#testpanel .tp-prow{display:flex;align-items:center;gap:5px;}
+#testpanel .tp-pn{flex:1;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#testpanel .tp-mn,#testpanel .tp-pl{width:20px;height:20px;border:1px solid #6a5a80;
+  background:transparent;color:#e8dff2;border-radius:2px;cursor:pointer;font-family:inherit;line-height:1;}
+#testpanel .tp-pv{min-width:30px;text-align:center;font-variant-numeric:tabular-nums;}
+#testpanel .tp-exit{margin-top:3px;border:1px solid #e8737f;color:#e8737f;background:transparent;
+  border-radius:2px;padding:5px;cursor:pointer;font-family:inherit;}
 .k-head{width:min(700px,94vw);}
 #mute{position:fixed;top:8px;right:12px;z-index:40;background:rgba(15,11,10,.6);
   border:1px solid var(--line);color:var(--cream);font-size:15px;line-height:1;
@@ -232,6 +257,9 @@ canvas{display:block;position:fixed;inset:0;touch-action:none;}
 #hpbar{height:12px;background:#2a1a1a;border:1px solid #48302c;}
 #hpfill{height:100%;width:100%;background:linear-gradient(90deg,#e8434f,#ff7a6b);transition:width .12s;}
 #hptext{font-size:10px;letter-spacing:.16em;color:var(--cream-dim);margin-top:4px;}
+#shbar{height:8px;background:#14232b;border:1px solid #305a6e;margin-top:5px;}
+#shfill{height:100%;width:100%;background:linear-gradient(90deg,#6fccff,#bfe9ff);transition:width .12s;}
+#shtext{font-size:9px;letter-spacing:.14em;color:#bfe9ff;margin-top:3px;}
 #killbox{position:absolute;left:16px;bottom:20px;}
 #killnum{font-family:'Bungee',cursive;font-size:46px;line-height:.9;color:var(--cream);
   text-shadow:0 3px 12px #000;}
@@ -485,11 +513,27 @@ img.spr{display:inline-block;vertical-align:middle;image-rendering:pixelated;
     <div id="skillpct">0%</div>
   </div>
   <div id="hpwrap"><div id="hpbar"><div id="hpfill"></div></div>
-    <div id="hptext">HP 120 / 120</div></div>
+    <div id="hptext">HP 120 / 120</div>
+    <div id="shieldrow" class="hidden"><div id="shbar"><div id="shfill"></div></div>
+      <div id="shtext"></div></div></div>
   <div id="killbox"><div id="killnum">0</div>
     <div id="killlabel">DEVOURED</div><div id="kps">0 / SEC</div></div>
   <div id="slots"><div id="wrow"></div><div id="prow"></div></div>
   <div id="debug"></div>
+</div>
+
+<div id="testpanel" class="hidden">
+  <div class="tp-head"><span>🔧 テスト</span>
+    <button id="tp-collapse" title="たたむ">▁</button></div>
+  <div class="tp-body">
+    <div class="tp-row"><span class="tp-lb">プレイヤー無敵</span>
+      <button id="tp-invuln" class="tp-tog">ON</button></div>
+    <div class="tp-lb">ボスを切替（無敵・攻撃ループ）</div>
+    <div id="tp-bosses" class="tp-chips"></div>
+    <div class="tp-lb">パッシブ Lv（±1で調整）</div>
+    <div id="tp-passives"></div>
+    <button id="tp-exit" class="tp-exit">テスト終了（キッチンへ）</button>
+  </div>
 </div>
 
 <div id="stick"><i></i></div>
@@ -855,14 +899,14 @@ const WEAPONS = {
   wrap:{
     id:'wrap', meta:{key:'dmg', per:0.045, label:'シールドの厚さ'}, name:'ラップ', icon:'🧻', kind:'guard', trait:'シールド',
     desc:'自分をラップで包む。受けたダメージを肩代わりし、破れてもしばらくすると巻き直す。',
-    dmg:40, count:1, cd:9.0,
+    dmg:40, count:1, cd:12.0,
     lvUp:[
-      {dmg:.25}, {cd:-1.2}, {dmg:.25}, {cd:-1.0},
-      {dmg:.3}, {cd:-1.0}, {dmg:.35,cd:-1.2}
+      {dmg:.25}, {cd:-0.8}, {dmg:.25}, {cd:-0.7},
+      {dmg:.3}, {cd:-0.7}, {dmg:.35,cd:-0.8}
     ],
     evo:{ name:'業務用ラップ', flag:'seal',
       desc:'厚みが増し、破れてもすぐに巻き直せるようになる。',
-      mul:{dmg:1.9, cd:0.55} },
+      mul:{dmg:1.9, cd:0.72} },
     lvText:[
       '🛡 シールドが厚くなる',
       '巻き直しが早くなる',
@@ -1070,8 +1114,8 @@ const WEAPON_AXES = {
   cream:  {dmg:3, count:0, spd:5, area:5},
   // 寸胴鍋：一撃の重さと鍋の大きさが本体。速さを上げると避けられなくなるので控えめ。
   stockpot:{dmg:6, count:2, spd:2, area:5},
-  // ラップ：攻撃しないので威力・数・広さは無い。巻き直しの速さだけ伸ばせる。
-  wrap:   {dmg:5, count:0, spd:4, area:0},
+  // ラップ：攻撃しないので威力・数・広さは無い。巻き直しの速さだけ伸ばせる（早くなりすぎないよう3段まで）。
+  wrap:   {dmg:5, count:0, spd:3, area:0},
   // ガスバーナー：吹いている間の火力と広がりが本体。数を増やす武器ではない。
   burner: {dmg:5, count:0, spd:4, area:5},
   // フライヤー：しぶきの数と油だまりの広さで面を作る。速さは控えめ。
@@ -1082,11 +1126,29 @@ function axisMax(id, key){
   return (a && a[key]!==undefined) ? a[key] : AXIS_DEFAULT[key];
 }
 const AXIS_INFO = {
-  dmg:   {label:'威力', per:'ダメージ +10%'},
-  count: {label:'数',   per:'弾・回数 +1'},
-  spd:   {label:'速さ', per:'攻撃間隔 -9%'},
-  area:  {label:'広さ', per:'当たり判定 +14%'},
+  dmg:   {label:'威力', up:'威力増加', eff:'ダメージが増える（+10%）',       per:'ダメージ +10%'},
+  count: {label:'数',   up:'数増加',   eff:'弾・攻撃の数が増える（+1）',     per:'弾・回数 +1'},
+  spd:   {label:'速さ', up:'速度加速', eff:'攻撃の間隔が短くなる（-9%）',    per:'攻撃間隔 -9%'},
+  area:  {label:'広さ', up:'範囲拡大', eff:'当たり判定が広がる（+14%）',    per:'当たり判定 +14%'},
 };
+
+/* 武器レベルアップの中身（lvUp の1段）から、効果が分かる短い名前を作る。
+   その段でいちばん「らしさ」が出るキーを優先して選ぶ。組み合わせ段は
+   カード下の説明文（lvText）が中身を補うので、名前は代表効果だけでよい。 */
+const UP_NAME_ORDER = [
+  ['split','拡散強化'], ['pierce','貫通強化'], ['chains','連鎖強化'],
+  ['bounce','反射強化'], ['impact','連撃強化'], ['imz','持続強化'],
+  ['zdps','持続強化'], ['zlife','持続強化'], ['slow','足止め強化'],
+  ['count','数増加'],   ['cd','速度加速'],   ['dmg','威力増加'],
+  ['blast','範囲拡大'], ['area','範囲拡大'], ['size','範囲拡大'],
+  ['dist','射程強化'],  ['jump','射程強化'], ['reach','射程強化'],
+  ['speed','弾速強化'], ['backMul','復路強化'], ['falloff','減衰緩和'],
+];
+function upgradeAction(u){
+  if(!u) return '強化';
+  for(const [k,label] of UP_NAME_ORDER) if(u[k]!==undefined) return label;
+  return '強化';
+}
 
 /* --------------------------------------------------------------- パッシブ */
 /* パッシブ。武器と同じく厨房で育てられる。
@@ -1887,8 +1949,9 @@ const ATK_GROWTH = 1.20;
 function playerAtkMul(){ return Math.pow(ATK_GROWTH, equipEffLv()); }
 /* ボスHPの全体調整。柔らかい／硬いと感じたらこの1つを動かす。
    プレイヤー火力が ×1.20^Lv で伸びるので、各ステージの bossHp も ×1.44/段で並べてある。
-   そうしないとステージが進むほどボス戦が短くなる。 */
-const BOSS_HP_SCALE = 2.5;
+   そうしないとステージが進むほどボス戦が短くなる。
+   進化がLv10まで遅くなり序盤の火力が伸びにくくなったぶん、全体を2倍に引き上げた（2.5→5.0）。 */
+const BOSS_HP_SCALE = 5.0;
 /* 中ボスは1回目がラン序盤、2回目が中盤に出る。プレイヤーの火力は
    ランが進むほど跳ね上がるので、同じHPだと1回目だけが極端に硬くなる。
    出る順番ごとに倍率を変えて、体感の重さを揃える。 */
@@ -2301,7 +2364,8 @@ const state = {
   mode:'title', t:0, kills:0, level:1, exp:0, expNext:16,
   hp:CFG.PLAYER_HP, maxhp:CFG.PLAYER_HP, iframe:0,
   px:0, py:0, camx:0, camy:0, facing:0,
-  weapons:[], passives:Object.create(null), codex:Object.create(null),
+  weapons:[], passives:Object.create(null), extras:Object.create(null), codex:Object.create(null),
+  testMode:false, testInvuln:false, testBoss:null,
   paused:false, obanPts:[], obanN:0, slowmo:0, eb:{}, cb:{}, packT:0, full:0, rerolls:0, sticky:0,
   clearFx:0,
   bossOutro:0,
@@ -2395,7 +2459,7 @@ function weaponStat(w){
     pull:d.pull||0, pullN:d.pullN||0, stun:d.stun||0, warm:d.warm||0,
     bounce:0
   };
-  for(let i=0;i<w.lv-1;i++){
+  for(let i=0;i<(w.step||0);i++){
     const u = d.lvUp[i]; if(!u) break;
     for(const k in u){
       if(k==='dmg'||k==='cd'||k==='hitGap') s[k] *= (1+u[k]);
@@ -2540,10 +2604,76 @@ function spawnBoss(kind){
   state.shake = 9;
 }
 
+/* ================= テスト：ボス単体の動き確認 =================
+   ボスを1体だけ無敵で出し、攻撃をループさせて回避・パッシブを確かめる。 */
+const BOSS_TEST_IDS = Object.keys(ENEMIES).filter(k=>ENEMIES[k].boss);
+function spawnTestBoss(id){
+  for(let i=enemies.n-1;i>=0;i--) enemies.items[i].dead = true;   // 場を掃除
+  sweepDead();
+  const d = ENEMIES[id]; if(!d) return;
+  const a = Math.random()*Math.PI*2, rad = Math.max(view.w,view.h)*0.42;
+  const e = spawnEnemy(id, state.px+Math.cos(a)*rad, state.py+Math.sin(a)*rad);
+  if(!e) return;
+  e.maxhp = e.hp = Math.round(d.hp * BOSS_HP_SCALE);
+  e.soft = 0; e.stT = 1.4; e.tier = 0;
+  state.bossRef = e; state.testBoss = id;
+  state.arena = { x: state.px, y: state.py, r: 600 };
+  state.phase = 'boss';
+  banner(d.name + '（テスト）', '#b98cff');
+  AU.play('boss_appear'); BGM.start('boss');
+}
+function startBossTest(id){
+  startRun();                              // 通常の初期化（プレイヤー・カメラ・HUD）を通す
+  state.testMode = true;
+  state.testInvuln = true;                 // 動き確認しやすいよう既定で無敵
+  for(const wid of META.loadout)           // 編成武器をLv1で与えて攻撃も見えるように
+    if(WEAPONS[wid] && !state.weapons.some(w=>w.id===wid))
+      state.weapons.push({id:wid, lv:1, step:0, cd:0, phase:0, burst:0, burstT:0, mods:{dmg:0,count:0,spd:0,area:0}});
+  spawnTestBoss(id);
+  renderTestPanel();
+  $('testpanel').classList.remove('hidden');
+}
+/* 戦闘中のテストパネル：ボス切替・無敵切替・パッシブLv±1 */
+function setTestPassive(id, d){
+  const max = PASSIVES[id] ? PASSIVES[id].max : 5;
+  const v = Math.max(0, Math.min(max, (state.passives[id]||0) + d));
+  if(v===0) delete state.passives[id]; else state.passives[id] = v;
+  state.maxhp = playerMaxHp(0);             // 厚手のエプロン等が即反映されるように
+  state.hp = Math.min(state.hp, state.maxhp);
+  renderTestPanel();
+}
+function renderTestPanel(){
+  const tp = $('testpanel'); if(!tp) return;
+  $('tp-invuln').textContent = state.testInvuln ? 'ON' : 'OFF';
+  $('tp-invuln').classList.toggle('off', !state.testInvuln);
+  $('tp-bosses').innerHTML = BOSS_TEST_IDS.map(id=>
+    `<button class="tp-chip${state.testBoss===id?' on':''}" data-boss="${id}">${ENEMIES[id].name}</button>`).join('');
+  $('tp-passives').innerHTML = PASSIVE_LIST.map(id=>{
+    const d=PASSIVES[id], lv=state.passives[id]||0;
+    return `<div class="tp-prow"><span class="tp-pn">${d.icon} ${d.name}</span>
+      <button class="tp-mn" data-pm="${id}" data-d="-1">−</button>
+      <span class="tp-pv">${lv}/${d.max}</span>
+      <button class="tp-pl" data-pm="${id}" data-d="1">＋</button></div>`;
+  }).join('');
+  tp.querySelectorAll('[data-boss]').forEach(b=>
+    b.onclick=()=>{ AU.play('ui'); spawnTestBoss(b.dataset.boss); renderTestPanel(); });
+  tp.querySelectorAll('[data-pm]').forEach(b=>
+    b.onclick=()=>{ AU.play('ui'); setTestPassive(b.dataset.pm, +b.dataset.d); });
+}
+function exitTest(){
+  state.testMode=false; state.testInvuln=false; state.testBoss=null;
+  state.arena=null; state.bossRef=null; BGM.stop();
+  for(let i=enemies.n-1;i>=0;i--) enemies.items[i].dead = true; sweepDead();
+  $('testpanel').classList.add('hidden');
+  $('hud').classList.add('hidden'); $('pausebtn').style.display='none';
+  showKitchen(); kTab='dev'; renderKitchen();     // 出撃元のテストタブへ戻る
+}
+
 /* --------------------------------------------------------- ダメージ処理 */
 function hitEnemy(idx, dmg, kx, ky, knock, src){
   const e = enemies.items[idx];
   if(!e || e.dead || e.hp<=0) return;
+  if(state.testMode && e.boss) return;         // テスト：ボスは無敵。攻撃をループさせて動きだけ見る
   if(src) e.killedBy = src;
   const crit = Math.random() < 0.05 + (state.eb.crit||0)/100;
   if(crit) AU.play('crit');
@@ -2750,6 +2880,7 @@ function spawnGift(){
 }
 
 function hurtPlayer(dmg){
+  if(state.testInvuln) return;                 // テスト：プレイヤー無敵中は一切ダメージを受けない
   if(state.iframe>0 || state.mode!=='play') return;
   if(Math.random()*100 < (state.eb.eva||0)){        // 回避：見えないと存在しないのと同じなので必ず表示する
     state.iframe = statIframe()*0.55;
@@ -3733,6 +3864,7 @@ function updateSweeps(dt){
    ・ボスの段はボス撃破で次へ
    ========================================================================= */
 function updateWave(dt){
+  if(state.testMode) return;                    // テスト：ウェーブ進行もザコ湧きも止める（ボスだけ）
   const p = wavePlan();
 
   if(p.boss){                                   // ボス戦の段
@@ -6189,17 +6321,26 @@ function updateHud(){
   $('xpfill').style.width=(state.exp/state.expNext*100)+'%';
   $('hpfill').style.width=(state.hp/state.maxhp*100)+'%';
   $('hptext').textContent=`HP ${Math.ceil(state.hp)} / ${Math.round(state.maxhp)}`;
+  // ラップのシールド残量を数字とバーで見せる（ラップを持っているときだけ）
+  const shrow=$('shieldrow');
+  if(state.shieldMax>0){
+    shrow.classList.remove('hidden');
+    $('shfill').style.width=Math.max(0,state.shield/state.shieldMax*100)+'%';
+    $('shtext').textContent=`🧻 シールド ${Math.ceil(state.shield)} / ${Math.round(state.shieldMax)}`;
+  } else if(!shrow.classList.contains('hidden')){
+    shrow.classList.add('hidden');
+  }
   $('killnum').textContent=state.kills;
   const k=$('kps');
   if(state.kpsNow>3){ k.style.opacity='1'; k.textContent=state.kpsNow+' / SEC'; } else k.style.opacity='0';
   // ウェーブ表示
   const p = wavePlan();
   const bw=$('bosswrap'), ww=$('wavewrap');
-  if(p.boss && state.bossRef){
+  if((p.boss || state.testMode) && state.bossRef){
     ww.classList.add('hidden'); bw.classList.remove('hidden');
     $('bossname').textContent = ENEMIES[state.bossRef.type].name;
     $('bossfill').style.width = (state.bossRef.dying ? 0 : Math.max(0,(state.bossRef.hp/state.bossRef.maxhp*100)))+'%';
-    $('wavechip').textContent = state.phase==='midboss' ? 'MID BOSS' : 'BOSS';
+    $('wavechip').textContent = state.testMode ? 'TEST' : (state.phase==='midboss' ? 'MID BOSS' : 'BOSS');
   } else {
     bw.classList.add('hidden'); ww.classList.remove('hidden');
     $('wavechip').textContent = 'WAVE '+waveNo();
@@ -6273,16 +6414,20 @@ function buildChoicePool(){
     for(const id of META.loadout) if(!ownedIds.has(id)) pool.push({kind:'weapon-new', id, weight:12});
   for(const w of state.weapons){
     if(w.innate) continue;                       // 通常攻撃は選択肢に出さない
-    if(w.lv<8) pool.push({kind:'weapon-up', id:w.id, weight:14});
+    if(w.evolved) continue;                      // 進化後はその武器のカードを出さない（打ち止め）
+    const evo = WEAPONS[w.id].evo;
+    if(w.lv >= WEAPON_MAX_LV){                    // Lv10：進化カードのみ
+      if(evo) pool.push({kind:'evolve', id:w.id, weight:100});
+      continue;                                   // 進化が無い武器はここで打ち止め
+    }
+    // Lv10未満：レベルアップ札と軸強化札。どれを取ってもレベルが1上がる。
+    if((w.step||0) < WEAPONS[w.id].lvUp.length)
+      pool.push({kind:'weapon-up', id:w.id, weight:14});
     // 武器ごとに伸ばせる軸が違う。上限0の軸はその武器では出ない。
-    // さらに「強化の合計段数はその武器のレベルまで」という縛りをかける。
-    // これが無いと Lv1 の武器に十数段の強化が乗って、1本だけが突出する。
-    if(modTotal(w) < w.lv){
-      for(const k of ['dmg','count','spd','area']){
-        const max = axisMax(w.id, k);
-        if(max>0 && (w.mods[k]||0) < max)
-          pool.push({kind:'mod-'+k, id:w.id, weight: k==='dmg'?6 : k==='count'?6 : 5});
-      }
+    for(const k of ['dmg','count','spd','area']){
+      const max = axisMax(w.id, k);
+      if(max>0 && (w.mods[k]||0) < max)
+        pool.push({kind:'mod-'+k, id:w.id, weight: k==='dmg'?6 : k==='count'?6 : 5});
     }
   }
   // 武器と同じく、厨房で編成したパッシブからしか出ない
@@ -6298,17 +6443,16 @@ function buildChoicePool(){
   // 立て直しはフィールドのプレゼントボックスに任せる。
   return pool;
 }
-/* 進化の条件：その武器がLv6で、かつ専用強化を合計3段以上積んでいること。
-   軸カードが武器レベルを上げなくなったぶん、条件を下げて手数を揃えている
-   （変更前は7回で進化できた。この条件なら8回）。
-   6枠を浅く育てても進化しない＝一点に賭けた人だけへのご褒美。 */
+/* 進化の条件：その武器がLv10（＝上限）に達していること。
+   どのカード（レベルアップ札・軸強化札）を取ってもレベルは1上がるので、
+   合計9回強化すればLv10に届き、そこで進化カードだけが出る。進化後は打ち止め。 */
 function modTotal(w){
   const m = w.mods || {};
   return (m.dmg||0) + (m.count||0) + (m.spd||0) + (m.area||0);
 }
 function evolvableWeapons(){
   return state.weapons.filter(w=>
-    !w.evolved && w.lv>=6 && WEAPONS[w.id].evo && modTotal(w) >= 3);
+    !w.evolved && w.lv>=WEAPON_MAX_LV && WEAPONS[w.id].evo);
 }
 /* 中ボスのご褒美のルーレット。回すのは普通の強化。
    1回目の中ボスで1枠、2回目で2枠まわる。止まったものがそのまま手に入る。 */
@@ -6384,16 +6528,17 @@ function cardFace(c){
       lvl=`<span class="tag-new">NEW ・ 特性：${d.trait}</span>`; ds=d.desc;
     } else if(c.kind==='weapon-up'){
       const d=WEAPONS[c.id], w=state.weapons.find(x=>x.id===c.id);
-      ico=iconOf(d); nm=d.name;
-      lvl=`<span class="tag-w">Lv ${w.lv} → ${w.lv+1}</span>`;
-      ds=d.lvText[w.lv-1]||'強化';
+      const st=w.step||0;
+      ico=iconOf(d); nm=d.name+upgradeAction(d.lvUp[st]);
+      lvl=`<span class="tag-w">Lv ${w.lv} → ${Math.min(WEAPON_MAX_LV,w.lv+1)}</span>`;
+      ds=d.lvText[st]||'強化';
     } else if(c.kind.startsWith('mod-')){
       const key=c.kind.slice(4), A=AXIS_INFO[key];
       const d=WEAPONS[c.id], w=state.weapons.find(x=>x.id===c.id);
       const cur=w.mods[key]||0, max=axisMax(c.id, key);
-      ico=iconOf(d); nm=d.name+'の'+A.label;
+      ico=iconOf(d); nm=d.name+(A.up||A.label);
       lvl=`<span class="tag-up">${A.label} ${cur} → ${cur+1} / ${max}</span>`;
-      ds=A.per+'。';
+      ds=(A.eff||A.per)+'。';
     } else {
       const d=PASSIVES[c.id], lv=state.passives[c.id]||0;
       ico=d.icon; nm=d.name;
@@ -6487,19 +6632,24 @@ function applyCard(c){
   }
   else if(c.kind==='evolve'){
     const w=state.weapons.find(x=>x.id===c.id);
-    w.evolved=true; w.lv=Math.max(w.lv, 8);
+    w.evolved=true; w.lv=WEAPON_MAX_LV;
     banner(WEAPONS[c.id].evo.name, '#ffd84d');
     AU.play('evolve');
     state.flashG=0.35;
   }
-  else if(c.kind==='weapon-new') state.weapons.push({id:c.id, lv:1, cd:0, phase:0, burst:0, burstT:0, mods:{dmg:0,count:0,spd:0,area:0}});
-  else if(c.kind==='weapon-up') state.weapons.find(x=>x.id===c.id).lv++;
+  else if(c.kind==='weapon-new') state.weapons.push({id:c.id, lv:1, step:0, cd:0, phase:0, burst:0, burstT:0, mods:{dmg:0,count:0,spd:0,area:0}});
+  else if(c.kind==='weapon-up'){
+    // レベルアップ札：固有の効果（lvUp）を1段進め、武器レベルも1つ上げる。
+    const w = state.weapons.find(x=>x.id===c.id);
+    w.step = (w.step||0) + 1;
+    if(w.lv < WEAPON_MAX_LV) w.lv++;
+  }
   else if(c.kind.startsWith('mod-')){
-    // 1枚のカードは1つのことだけをする。以前は軸を1段上げると武器レベルも
-    // 一緒に上がっていたが、「速さ」を選んだのに攻撃力まで付いてくるのは分かりにくい。
+    // 軸強化（数/威力/速さ/広さ）も1段＝武器レベル+1。どの札でも「強化＝レベルが上がる」。
     const key = c.kind.slice(4);
     const w = state.weapons.find(x=>x.id===c.id);
     w.mods[key] = (w.mods[key]||0) + 1;
+    if(w.lv < WEAPON_MAX_LV) w.lv++;
   }
   else state.passives[c.id]=(state.passives[c.id]||0)+1;
 }
@@ -6532,12 +6682,7 @@ function renderPauseBuild(){
     const d = WEAPONS[w.id];
     const bits = [];
     if(w.evolved) bits.push('<b>進化</b>');
-    else bits.push('Lv <b>'+w.lv+'</b>');
-    // 強化はレベルまでしか積めないので、いくつ空いているかも出す
-    if(!w.innate){
-      const used = modTotal(w);
-      bits.push(`強化 <b>${used}</b> / ${w.lv}`);
-    }
+    else bits.push('Lv <b>'+w.lv+'</b> / '+WEAPON_MAX_LV);
     for(const k of ['dmg','count','spd','area'])
       if(w.mods && w.mods[k]) bits.push(AXIS_INFO[k].label+' <b>+'+w.mods[k]+'</b>');
     if(w.innate) bits.push('固有');
@@ -7057,14 +7202,26 @@ function renderDevTab(){
           ${[1000,10000,100000].map(v=>`<button class="eqchip" data-k="sugar" data-v="${v}"
              style="border-color:#ffd84d;color:#ffd84d">+${v.toLocaleString()}</button>`).join('')}
         </div></div></div>`
+    + `<div class="wcard" style="border-left-color:#7fd4ff">
+        <span class="ic">🥊</span>
+        <div class="mid"><div class="nm">ボス単体テスト</div>
+        <div class="eff" style="color:#5f544c">選んだボスを無敵で出し、攻撃をループさせて動きの確認・回避練習ができます。戦闘中のパネルでパッシブLvも1段ずつ調整できます。</div>
+        <div class="eqrow">${BOSS_TEST_IDS.map(id=>
+          `<button class="eqchip" data-k="bosstest" data-boss="${id}"
+             style="border-color:#7fd4ff;color:#7fd4ff">${ENEMIES[id].name}</button>`).join('')}
+        </div></div></div>`
     + `<div class="wcard" style="border-left-color:#e8434f">
         <span class="ic">🗑️</span>
         <div class="mid"><div class="nm">進行をリセット</div>
         <div class="eff" style="color:#5f544c">砂糖・設計図・レベル・装備をすべて初期状態に戻します。</div>
         <div class="eqrow"><button class="eqchip" data-k="reset" data-v="0"
           style="border-color:#e8434f;color:#e8434f">リセットする</button></div></div></div>`;
-  $('k-list').querySelectorAll('.eqchip[data-k]').forEach(b=>
-    b.addEventListener('click', ()=> devSet(b.dataset.k, +b.dataset.v, b.dataset.r)));
+  $('k-list').querySelectorAll('.eqchip[data-k]').forEach(b=>{
+    if(b.dataset.k==='bosstest')
+      b.addEventListener('click', ()=>{ AU.play('ui'); startBossTest(b.dataset.boss); });
+    else
+      b.addEventListener('click', ()=> devSet(b.dataset.k, +b.dataset.v, b.dataset.r));
+  });
 }
 function renderStages(){
   const avg = equipAvgLv();
@@ -7170,6 +7327,7 @@ function startRun(){
   spawnAcc:0, giftT:0, midCount:0, rouletteLeft:0, exPending:0, shield:0, shieldMax:0, shieldT:0,
     arena:null, bossRef:null,          // ボス戦で力尽きたとき、輪が次のランに残っていた
   kpsWindow:[], kpsBest:0, kpsNow:0, shake:0, flashT:0, flashG:0,
+    testMode:false, testInvuln:false, testBoss:null,   // 通常のランではテストモードを必ず切る
     bannerText:'', bannerT:0, lastHeal:-99, lastVac:-99, dash:null, cutT:0, cutAmt:0, cards:[], hits:0
   });
   slotSig='';
@@ -7188,7 +7346,7 @@ function startRun(){
   state.gauge = 0; state.gaugeGain = 0; state.skillOn = 0;
   // キャラ固有の通常攻撃を先頭に足す（スロットは消費しない）
   const inn = CHARS[state.cb.id] && CHARS[state.cb.id].innate;
-  if(inn) state.weapons.unshift({id:inn, lv:1, cd:0, phase:0, burst:0, burstT:0,
+  if(inn) state.weapons.unshift({id:inn, lv:1, step:0, cd:0, phase:0, burst:0, burstT:0,
                                  mods:{dmg:0,count:0,spd:0,area:0}, innate:true});
   state.rerolls = state.cb.rerolls||0;
   state.mode='play'; lastT=0; updateHud();
@@ -7196,6 +7354,8 @@ function startRun(){
 }
 /* 決着したら、まず大きく結果を見せる。タップで初めてリザルト画面へ。 */
 function endRun(cleared){
+  state.testMode = false; state.testInvuln = false;   // テスト中に終わってもフラグを残さない
+  $('testpanel').classList.add('hidden');
   state.arena = null; state.bossRef = null;   // ボス戦の輪をここで確実に畳む
   BGM.stop();
   AU.play(cleared ? 'clear' : 'over');
@@ -7323,6 +7483,10 @@ $('btn-dev').addEventListener('click', ()=>{
 $('btn-title').addEventListener('click', ()=>{
   state.mode='title'; $('result').classList.add('hidden'); $('title').classList.remove('hidden');
 });
+// テストパネルの固定ボタン
+$('tp-collapse').addEventListener('click', ()=>{ $('testpanel').classList.toggle('collapsed'); AU.play('ui'); });
+$('tp-invuln').addEventListener('click', ()=>{ state.testInvuln=!state.testInvuln; AU.play('ui'); renderTestPanel(); });
+$('tp-exit').addEventListener('click', ()=>{ AU.play('ui'); exitTest(); });
 
 requestAnimationFrame(loop);
 </script>

@@ -897,27 +897,28 @@ const WEAPONS = {
       '↔ 鍋 +1個・🍲 大幅に拡大・威力 +26%'
     ]
   },
-  /* ラップ：自分を包んでダメージを肩代わりする。攻撃力はゼロ。
-     初めての防御専用の武器。破れても時間で巻き直す。 */
+  /* ラップ：自分を包み、被弾を「回数ぶん」まるごと肩代わりする。攻撃力はゼロ。
+     ダメージの大小に関わらず1発で1枚消費し、破れても時間で巻き直す。
+     強化は主に巻き直しの速さ、進化で肩代わりが2回に増える。 */
   wrap:{
-    id:'wrap', meta:{key:'dmg', per:0.045, label:'シールドの厚さ'}, name:'ラップ', icon:'🧻', kind:'guard', trait:'シールド',
-    desc:'自分をラップで包む。受けたダメージを肩代わりし、破れてもしばらくすると巻き直す。',
-    dmg:40, count:1, cd:12.0,
+    id:'wrap', meta:{key:'cd', per:0.02, label:'巻き直しの速さ'}, name:'ラップ', icon:'🧻', kind:'guard', trait:'シールド',
+    desc:'自分をラップで包み、次の被弾を1回まるごと肩代わりする。破れてもしばらくすると巻き直す。',
+    dmg:0, count:1, cd:16.0,
     lvUp:[
-      {dmg:.25}, {cd:-0.8}, {dmg:.25}, {cd:-0.7},
-      {dmg:.3}, {cd:-0.7}, {dmg:.35,cd:-0.8}
+      {cd:-0.08}, {cd:-0.08}, {cd:-0.08}, {cd:-0.10},
+      {cd:-0.10}, {cd:-0.10}, {cd:-0.12}
     ],
     evo:{ name:'業務用ラップ', flag:'seal',
-      desc:'厚みが増し、破れてもすぐに巻き直せるようになる。',
-      mul:{dmg:1.9, cd:0.72} },
+      desc:'二重に包み、被弾を2回まで肩代わりできるようになる。',
+      mul:{cd:0.85} },
     lvText:[
-      '🛡 シールドが厚くなる',
+      '巻き直しが少し早くなる',
+      '巻き直しが少し早くなる',
+      '巻き直しが少し早くなる',
       '巻き直しが早くなる',
-      '🛡 シールドが厚くなる',
       '巻き直しが早くなる',
-      '🛡 シールド大幅強化',
       '巻き直しがさらに早く',
-      '🛡 大幅強化・巻き直しも短縮'
+      '巻き直しを大きく短縮'
     ]
   },
   /* ガスバーナー：一定時間ずっと炎を吹き、そのあと休む。
@@ -1271,35 +1272,35 @@ const ENEMIES = {
   // ボス（挙動は bossAI で分岐）
   captain:{id:'captain',name:'クッキー将軍', ai:'boss', boss:true,
            hp:1600, speed:84, dmg:16, r:42, exp:60, score:0,
-           pattern:'charge', bDmg:10, bSpeed:190},
+           pattern:'charge', bDmg:13.3, bSpeed:190},
   slimeboss:{id:'slimeboss', name:'巨大スライム', ai:'boss', boss:true,
            hp:6000, speed:62, dmg:17, r:50, exp:70, score:0,
-           pattern:'blob', bDmg:9, bSpeed:150, spawns:'s_slime'},
+           pattern:'blob', bDmg:12, bSpeed:150, spawns:'s_slime'},
   gummy:  {id:'gummy', name:'タフグミベア', ai:'boss', boss:true,
            hp:13000, speed:78, dmg:22, r:52, exp:220, score:0,
-           pattern:'bear', bDmg:11, bSpeed:180},
+           pattern:'bear', bDmg:14.7, bSpeed:180},
   ginger: {id:'ginger', name:'ジンジャージェネラル', ai:'boss', boss:true,
            hp:5500, speed:70, dmg:20, r:54, exp:200, score:0,
-           pattern:'danmaku', bDmg:9, bSpeed:165},
+           pattern:'danmaku', bDmg:12, bSpeed:165},
   /* クッキーキッチンのボス。一歩も動かない代わりに、天板からクッキーを焼き出し弾幕で埋める。
      動かないので接触ダメージは大きめ（近寄る判断に責任を持たせる）。 */
   /* パンケーキキング。1段と3段で同じ叩きつけを使い、重さだけ変える。
      ティーパーティーの中ボス2体ぶんとして、1段→3段の順で出す。 */
   pancake1:{id:'pancake1', name:'パンケーキキング', ai:'boss', boss:true,
             hp:2200, speed:64, dmg:22, r:46, exp:200, score:0,
-            pattern:'slam', bDmg:11, bSpeed:160, look:'pancake', tiers:1},
+            pattern:'slam', bDmg:14.7, bSpeed:160, look:'pancake', tiers:1},
   pancake3:{id:'pancake3', name:'パンケーキキング 3段', ai:'boss', boss:true,
             hp:5200, speed:58, dmg:28, r:58, exp:200, score:0,
-            pattern:'slam', bDmg:13, bSpeed:170, look:'pancake', tiers:3},
+            pattern:'slam', bDmg:17.3, bSpeed:170, look:'pancake', tiers:3},
   oven:   {id:'oven', name:'クッキーオーブン', ai:'boss', boss:true,
            hp:3600, speed:0, dmg:28, r:60, exp:200, score:0,
-           pattern:'oven', bDmg:12, bSpeed:150, spawns:'c_sword'},
+           pattern:'oven', bDmg:16, bSpeed:150, spawns:'c_sword'},
   eclair: {id:'eclair', name:'ジャイアント・エクレア', ai:'boss', boss:true,
            hp:1500, speed:86, dmg:16, r:44, exp:60, score:0,
-           pattern:'charge', bDmg:10, bSpeed:180},
+           pattern:'charge', bDmg:13.3, bSpeed:180},
   pudding:{id:'pudding',name:'プリン・ア・ラ・モード', ai:'boss', boss:true,
            hp:5400, speed:78, dmg:20, r:58, exp:200, score:0,
-           pattern:'quake', bDmg:11, bSpeed:165},
+           pattern:'quake', bDmg:14.7, bSpeed:165},
 };
 const ENEMY_LIST = Object.keys(ENEMIES).filter(k=>!ENEMIES[k].boss);
 
@@ -2951,14 +2952,15 @@ function hurtPlayer(dmg){
   dmg *= (1 - Math.min(65, dr)/100);
   // フォークの突進中はダメージカット（無敵ではないので0にはならない）。
   if(state.cutT>0) dmg *= (1 - state.cutAmt);
-  // ラップのシールドが先に受け止める。割れると音と光で分かるようにする。
+  // ラップのシールドが1回ぶんまるごと肩代わりする（ダメージの大小を問わず1枚消費）。
   if(state.shield > 0){
-    const use = Math.min(state.shield, dmg);
-    state.shield -= use; dmg -= use;
+    state.shield -= 1;
     state.shieldT = 0.25;
     AU.play('block');
-    if(state.shield <= 0){ state.shield = 0; banner('ラップが破れた', '#bfe9ff'); }
-    if(dmg <= 0){ state.iframe = statIframe(); return; }
+    banner(state.shield <= 0 ? 'ラップが破れた' : 'ラップが受けとめた', '#bfe9ff');
+    if(state.shield < 0) state.shield = 0;
+    state.iframe = statIframe();
+    return;                          // その一撃は完全に肩代わり
   }
   state.hp -= dmg;
   state.hits++;
@@ -3270,11 +3272,12 @@ function updateWeapons(dt){
       /* ---- シールド：ラップ。一定時間ごとに自分を包み直す ---- */
       case 'guard': {
         w.cdMax = s.cd;
-        state.shieldMax = Math.max(state.shieldMax, s.dmg);
+        const hits = w.evolved ? 2 : 1;      // 業務用ラップは2回まで肩代わり
+        state.shieldMax = Math.max(state.shieldMax, hits);
         w.cd = (w.cd||0) - dt;
-        if(w.cd<=0 && state.shield < s.dmg){
+        if(w.cd<=0 && state.shield < hits){
           w.cd = s.cd;
-          state.shield = s.dmg;              // 巻き直して満タンに戻す
+          state.shield = hits;               // 巻き直して回数を戻す
           state.shieldT = 0.4;
           AU.play('block');
           banner('ラップを巻いた', '#bfe9ff');
@@ -6590,7 +6593,7 @@ function updateHud(){
   if(state.shieldMax>0){
     shrow.classList.remove('hidden');
     $('shfill').style.width=Math.max(0,state.shield/state.shieldMax*100)+'%';
-    $('shtext').textContent=`🧻 シールド ${Math.ceil(state.shield)} / ${Math.round(state.shieldMax)}`;
+    $('shtext').textContent=`🧻 ラップ あと ${Math.max(0,Math.ceil(state.shield))} 回`;
   } else if(!shrow.classList.contains('hidden')){
     shrow.classList.add('hidden');
   }

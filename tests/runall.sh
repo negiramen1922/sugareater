@@ -1,0 +1,38 @@
+#!/bin/bash
+# 全テストをまとめて実行する。対象は ../index.html。
+#   使い方:  bash runall.sh
+# 前提: 初回のみ  npm install jsdom  （tests/ 直下か上位に node_modules があること）
+set -u
+cd "$(dirname "$0")"
+
+echo "===== 構文チェック ====="
+bash check.sh ../index.html || exit 1
+echo
+
+# jsdom でゲームを実際に動かして検証する（引き継ぎ資料の手法を再現）。
+TESTS=(
+  errtest.js    # 読み込み・出撃・更新で JS エラーが出ないか
+  wpntest.js    # 武器定義の健全性（19本＋固有2・フライパンシールド撤去・おぼん→フライパン）
+  knifetest.js  # ナイフの分裂（貫通→分裂・0→3・子ナイフ生成）
+  forktest.js   # フォークのダメージカット（無敵ではない・永続しない）
+  foiltest.js   # アルミホイル進化（本数は数のみ・減衰ゼロ・連鎖増）
+  pantest.js    # フライパンは攻撃するが弾は弾かない
+  sprtest.js    # 立ち絵 w_pan が実際に描画される・武器sprの整合
+)
+
+fail=0
+for t in "${TESTS[@]}"; do
+  printf '%-14s ' "$t"
+  out=$(timeout 90 node "$t" 2>&1)
+  if echo "$out" | grep -q "すべて通りました"; then
+    n=$(echo "$out" | grep -c "○")
+    echo "OK  (${n}項目)"
+  else
+    echo "★ 失敗"
+    echo "$out" | grep -E "✗|Error|エラー" | head -10 | sed 's/^/    /'
+    fail=1
+  fi
+done
+
+echo
+if [ $fail -eq 0 ]; then echo "===== 全テスト通過 ====="; else echo "===== 失敗あり ====="; exit 1; fi

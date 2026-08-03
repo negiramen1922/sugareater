@@ -530,6 +530,8 @@ img.spr{display:inline-block;vertical-align:middle;image-rendering:pixelated;
       <button id="tp-invuln" class="tp-tog">ON</button></div>
     <div class="tp-lb">ボスを切替（無敵・攻撃ループ）</div>
     <div id="tp-bosses" class="tp-chips"></div>
+    <div class="tp-lb">ボスHPを設定（HPで行動が変わる）</div>
+    <div id="tp-bosshp" class="tp-chips"></div>
     <div class="tp-lb">パッシブ Lv（±1で調整）</div>
     <div id="tp-passives"></div>
     <button id="tp-exit" class="tp-exit">テスト終了（キッチンへ）</button>
@@ -2642,12 +2644,29 @@ function setTestPassive(id, d){
   state.hp = Math.min(state.hp, state.maxhp);
   renderTestPanel();
 }
+// ボスは HP で行動が変わる（>70%=第1・>35%=第2・以下=第3）。無敵なので、
+// HPを指定値に置いて各フェーズの動きを確かめられるようにする。
+function bossPhaseLabel(){
+  const b = state.bossRef; if(!b || !b.maxhp) return '';
+  const hpr = b.hp/b.maxhp;
+  const ph = hpr>0.7 ? 1 : (hpr>0.35 ? 2 : 3);
+  return `第${ph}フェーズ（HP ${Math.round(hpr*100)}%）`;
+}
+function setTestBossHp(r){
+  const b = state.bossRef; if(!b) return;
+  b.hp = Math.max(1, Math.round(b.maxhp * r));
+  renderTestPanel();
+}
 function renderTestPanel(){
   const tp = $('testpanel'); if(!tp) return;
   $('tp-invuln').textContent = state.testInvuln ? 'ON' : 'OFF';
   $('tp-invuln').classList.toggle('off', !state.testInvuln);
   $('tp-bosses').innerHTML = BOSS_TEST_IDS.map(id=>
     `<button class="tp-chip${state.testBoss===id?' on':''}" data-boss="${id}">${ENEMIES[id].name}</button>`).join('');
+  const HPSET = [['第1 (100%)',1.0],['第2 (55%)',0.55],['第3 (20%)',0.20]];
+  $('tp-bosshp').innerHTML = HPSET.map(([lb,r])=>
+    `<button class="tp-chip" data-hp="${r}">${lb}</button>`).join('')
+    + `<span class="tp-pv" style="width:100%;text-align:left;color:#7fd4ff">${bossPhaseLabel()}</span>`;
   $('tp-passives').innerHTML = PASSIVE_LIST.map(id=>{
     const d=PASSIVES[id], lv=state.passives[id]||0;
     return `<div class="tp-prow"><span class="tp-pn">${d.icon} ${d.name}</span>
@@ -2657,6 +2676,8 @@ function renderTestPanel(){
   }).join('');
   tp.querySelectorAll('[data-boss]').forEach(b=>
     b.onclick=()=>{ AU.play('ui'); spawnTestBoss(b.dataset.boss); renderTestPanel(); });
+  tp.querySelectorAll('[data-hp]').forEach(b=>
+    b.onclick=()=>{ AU.play('ui'); setTestBossHp(+b.dataset.hp); });
   tp.querySelectorAll('[data-pm]').forEach(b=>
     b.onclick=()=>{ AU.play('ui'); setTestPassive(b.dataset.pm, +b.dataset.d); });
 }

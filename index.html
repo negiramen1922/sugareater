@@ -2085,7 +2085,7 @@ const projs   = makePool(CFG.MAX_PROJ, ()=>({
   cluster:0, dot:0, hitGapT:0, look:'', zcol:'',
   blast:0, zdps:0, zlife:0, zr:0, slow:0, pull:0, pullN:0
 }));
-const ebul  = makePool(CFG.MAX_EBULLET, ()=>({x:0,y:0,vx:0,vy:0,r:5,dmg:0,life:0,axe:0,arrow:0,spin:0,t:0,home:0,split:0,blob:0,big:0,stuck:0}));
+const ebul  = makePool(CFG.MAX_EBULLET, ()=>({x:0,y:0,vx:0,vy:0,r:5,dmg:0,life:0,axe:0,arrow:0,spin:0,t:0,home:0,split:0,blob:0,big:0,stuck:0,streak:0}));
 const gems  = makePool(CFG.MAX_GEMS, ()=>({x:0,y:0,vx:0,vy:0,val:1,pull:false,t:0,kind:0}));
 const dmgs  = makePool(CFG.MAX_DMG, ()=>({x:0,y:0,vy:0,txt:'',life:0,crit:false,sh:false,miss:false}));
 const parts = makePool(CFG.MAX_PART, ()=>({x:0,y:0,vx:0,vy:0,life:0,max:0,r:0,c:'#fff',ring:false,spr:''}));
@@ -4446,10 +4446,19 @@ function ovenStraightMed(e, d){                      // 自機方向へ直進す
   const a0 = Math.atan2(state.py-e.y, state.px-e.x);
   ovenShot(e, e.x, e.y, a0, d.bSpeed*0.95, 15);
 }
-function ovenScatterBeam(e, d){                      // 乱射ビーム：ランダム方向へ細めのビーム
-  const a = Math.random()*6.283;
-  const sweep = (Math.random()<0.5?-1:1)*(0.3+Math.random()*0.4);
-  fireBeam(e, d, sweep, a, true, {w:22, tell:0.45, fire:0.35});
+function ovenStreak(e, d, ang, spd){                 // 細長いビーム状の弾（レーザー弾）
+  const b = ebul.spawn(); if(!b) return;
+  b.x=e.x; b.y=e.y;
+  b.vx=Math.cos(ang)*spd; b.vy=Math.sin(ang)*spd;
+  b.r=6; b.dmg=d.bDmg*1.1; b.life=4; b.spin=ang; b.streak=1;
+  b.axe=0; b.arrow=0; b.home=0; b.split=0; b.blob=0; b.big=0; b.stuck=0;
+}
+function ovenScatterSpray(e, d){                     // 乱射：細長いレーザー弾をランダム方向へまとめて撒く
+  for(let k=0;k<3;k++){
+    const a = Math.random()*6.283;
+    ovenStreak(e, d, a, d.bSpeed*(1.5+Math.random()*0.7));
+  }
+  AU.play('boss_shot');
 }
 function ovenThickBeam(e, d, track){                 // 極太ビーム（追従 or 自機狙い固定）
   fireBeam(e, d, 0, track ? undefined : Math.atan2(state.py-e.y, state.px-e.x), !track,
@@ -4465,14 +4474,14 @@ function bossOven(e, d, dt, nx, ny, dist){
   const hpr = e.hp/e.maxhp;
   const cph = hpr>0.5 ? 1 : (hpr>0.2 ? 2 : 3);
   e.cph = cph;
-  const SCATTER = 6, THICKWAIT = 2.0, BEAMWAIT = 1.9;
+  const SCATTER = 12, THICKWAIT = 2.0, BEAMWAIT = 1.9;   // 乱射は細かく連射する
   const adv  = (dur)=>{ e.pat++;  e.sub=0; e.bt=0; e.patT=dur||0; };
   const loop = (dur)=>{ e.pat=0;  e.sub=0; e.bt=0; e.patT=dur||0; };
   if(e.gph!==cph){ e.gph=cph; e.pat=0; e.sub=0; e.bt=0; e.patT=0; }
 
   if(cph===1){                                       // 乱射ビーム → 円形弾幕×3
     if(e.pat===0){
-      if(e.bt<=0 && e.sub<SCATTER){ ovenScatterBeam(e,d); e.sub++; e.bt=0.32; }
+      if(e.bt<=0 && e.sub<SCATTER){ ovenScatterSpray(e,d); e.sub++; e.bt=0.14; }
       if(e.sub>=SCATTER && e.bt<=0) adv(0.5);
     } else {
       if(e.bt<=0 && e.sub<3){ ovenRing(e,d,22,false); AU.play('boss_shot'); e.sub++; e.bt=0.6; }
@@ -4481,7 +4490,7 @@ function bossOven(e, d, dt, nx, ny, dist){
   }
   else if(cph===2){                                  // 乱射ビーム → 極太（自機狙い）→ 中円形×3
     if(e.pat===0){
-      if(e.bt<=0 && e.sub<SCATTER){ ovenScatterBeam(e,d); e.sub++; e.bt=0.3; }
+      if(e.bt<=0 && e.sub<SCATTER){ ovenScatterSpray(e,d); e.sub++; e.bt=0.13; }
       if(e.sub>=SCATTER && e.bt<=0) adv(0);
     } else if(e.pat===1){
       if(e.sub===0){ ovenThickBeam(e,d,false); e.sub=1; e.patT=THICKWAIT; }
@@ -4493,7 +4502,7 @@ function bossOven(e, d, dt, nx, ny, dist){
   }
   else {                                             // 乱射ビーム → 追従極太+扇×5 → 円形+直進中弾幕×3 → 4方向ビーム
     if(e.pat===0){
-      if(e.bt<=0 && e.sub<SCATTER){ ovenScatterBeam(e,d); e.sub++; e.bt=0.28; }
+      if(e.bt<=0 && e.sub<SCATTER){ ovenScatterSpray(e,d); e.sub++; e.bt=0.12; }
       if(e.sub>=SCATTER && e.bt<=0) adv(0);
     } else if(e.pat===1){
       if(e.sub===0){ ovenThickBeam(e,d,true); e.sub=1; e.patT=2.6; e.ripLeft=5; e.bt=0.5; }
@@ -5560,6 +5569,19 @@ function render(){
         ctx.fillStyle='#9aa6b6';
         ctx.beginPath(); ctx.arc(x,y,b.r,0,6.283); ctx.fill();
       }
+      continue;
+    }
+    if(b.streak){                                          // 細長いビーム状の弾（レーザー弾）
+      const ang = Math.atan2(b.vy, b.vx);
+      const L=b.r*4.6, W=b.r*0.82;
+      ctx.save(); ctx.translate(x,y); ctx.rotate(ang);
+      ctx.globalAlpha=0.30; ctx.fillStyle='#ff5f8d';
+      ctx.beginPath(); ctx.ellipse(0,0,L*1.15,W*2.0,0,0,6.283); ctx.fill();   // 尾を引く光
+      ctx.globalAlpha=1; ctx.fillStyle='#ff5f8d';
+      ctx.beginPath(); ctx.ellipse(0,0,L,W,0,0,6.283); ctx.fill();            // 本体
+      ctx.fillStyle='#fff3f7';
+      ctx.beginPath(); ctx.ellipse(0,0,L*0.72,W*0.44,0,0,6.283); ctx.fill();  // 芯
+      ctx.restore();
       continue;
     }
     // 見た目で撃ち主と性質を分ける：ピンク＝ジンジャー、青＝グミ勢、紫＝追尾、白縁＝分裂

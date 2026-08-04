@@ -19,6 +19,10 @@ TESTS=(
   pantest.js    # フライパンは攻撃するが弾は弾かない
   sprtest.js    # 立ち絵 w_pan が実際に描画される・武器sprの整合
   progtest.js   # 育成ModelA（全カードでLv上昇・Lv10進化のみ・進化後打ち止め）＋ボスHP2倍
+  catetest.js   # 武器カテゴリ（近接/遠隔/設置 6/7/6）とマスタリー加算
+  shoptest.js   # 装備/メタLvの中立化＋強化ショップ（アカウント共通）
+  uitest.js     # 厨房UI再構成（各タブ描画・武器シュガー解放・キャラ解放）
+  runplantest.js # 時間駆動の長いラン（約5分ごとにボス・出るたびタフ）
 )
 
 fail=0

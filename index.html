@@ -1212,9 +1212,7 @@ const PASSIVE_MAX_LV = 10;
 /* ラン中に n 段取ったときの合計値。厨房のレベルで1段の重みが変わる。 */
 function passiveVal(id, runLv){
   const d = PASSIVES[id]; if(!d || !runLv) return 0;
-  const m = (META.ps && META.ps[id]) ? META.ps[id].lv : 0;
-  const per = d.per[0] + (d.per[1]-d.per[0]) * (m/PASSIVE_MAX_LV);
-  return per * runLv;
+  return d.per[0] * runLv;   // パッシブのメタ強化は廃止。ラン中の1段＝基礎値ぶん。
 }
 function pv(id){ return passiveVal(id, state.passives[id]||0); }
 
@@ -1778,6 +1776,25 @@ const MASTERY_DRAFT = 0.05;
 META.mastery = {};
 for(const id of WEAPON_LIST) META.mastery[id] = 0;
 
+/* 強化ショップ（アカウント共通・フラット一覧・ツリーなし）。
+   旧・装備／武器メタLv／パッシブメタLv の「縦の強さ」をここ1本に集約する。
+   ・シュガーで買う ・ランクに上限（控えめ）・払い戻しなし
+   ・key は戦闘側が読む state.eb.* のキーに一致させる（供給元だけ差し替わる）。
+   per=1ランクあたりの値、max=上限ランク、base×mul^rank=コスト。 */
+const SHOP = {
+  atk:  {id:'atk',  name:'火力',   icon:'🔥', key:'atk',   per:5, max:5, unit:'%', base:120, mul:1.5},  // 合計+25%
+  hp:   {id:'hp',   name:'体力',   icon:'❤️', key:'hp',    per:7, max:5, unit:'',  base:120, mul:1.5},  // 合計+35（≈+30%）
+  crit: {id:'crit', name:'会心',   icon:'✨', key:'crit',  per:2, max:5, unit:'%', base:140, mul:1.5},  // 合計+10%
+  dr:   {id:'dr',   name:'防御',   icon:'🛡️', key:'dr',    per:3, max:5, unit:'%', base:150, mul:1.6},  // 合計+15%
+  spd:  {id:'spd',  name:'俊足',   icon:'👟', key:'spd',   per:2, max:3, unit:'%', base:120, mul:1.6},  // 合計+6%
+  pick: {id:'pick', name:'集荷',   icon:'🧲', key:'pick',  per:6, max:4, unit:'',  base:100, mul:1.5},
+  exp:  {id:'exp',  name:'学び',   icon:'📕', key:'exp',   per:4, max:5, unit:'%', base:120, mul:1.5},
+  sugar:{id:'sugar',name:'砂糖',   icon:'🍬', key:'sugar', per:6, max:5, unit:'%', base:120, mul:1.5},
+};
+const SHOP_LIST = Object.keys(SHOP);
+META.shop = {};
+for(const id of SHOP_LIST) META.shop[id] = 0;   // 購入ランク（0＝未購入）
+
 function metaLoad(){
   try{
     const raw = localStorage.getItem(META_KEY);
@@ -1812,6 +1829,7 @@ function metaLoad(){
     }
     for(const id of EQUIP_ITEM_LIST) if(o.eqown) META.eqown[id] = o.eqown[id]||0;
     if(o.mastery) for(const id of WEAPON_LIST) META.mastery[id] = o.mastery[id]||0;
+    if(o.shop) for(const id of SHOP_LIST) META.shop[id] = Math.min(SHOP[id].max, o.shop[id]||0);
   }catch(e){ /* 保存が使えない環境ではその場かぎりの進行になる */ }
 }
 function metaSave(){
@@ -1840,6 +1858,33 @@ function grantMastery(){
     if(catsUsed.has(weaponCategory(id)))           // 同カテゴリだけ薄く
       META.mastery[id] = (META.mastery[id]||0) + MASTERY_DRAFT;
   }
+}
+/* 強化ショップ：ラン開始時に固定する恒久ボーナスの合計。戦闘は state.eb.* を読むだけ。 */
+function shopBonus(){
+  const b = {exp:0,pick:0,hp:0,dr:0,atk:0,crit:0,spd:0,eva:0,sugar:0,area:0};
+  for(const id of SHOP_LIST){
+    const d = SHOP[id], r = (META.shop && META.shop[id])||0;
+    if(r>0) b[d.key] += d.per * r;
+  }
+  b.dr = Math.min(45, b.dr);        // 被ダメージ軽減の上限
+  b.eva = Math.min(40, b.eva);      // 回避の上限
+  return b;
+}
+/* 次の1ランクの値段。上限に達していれば null（＝これ以上買えない）。 */
+function shopCost(id){
+  const d = SHOP[id], r = (META.shop[id]||0);
+  if(r>=d.max) return null;
+  return Math.round(d.base * Math.pow(d.mul, r));
+}
+function canBuyShop(id){
+  const c = shopCost(id);
+  return c!==null && META.sugar>=c;
+}
+function buyShop(id){
+  if(!canBuyShop(id)) return false;
+  META.sugar -= shopCost(id);
+  META.shop[id] = (META.shop[id]||0) + 1;
+  metaSave(); return true;
 }
 const BP_CURVE = [1,1,2,2,3,4,5,6,8,10];       // 各レベルに必要な設計図の枚数
 function metaMax(id){ return WEAPON_MAX_LV; }
@@ -1963,18 +2008,11 @@ function eqPower(sid, rar){
   const e = META.eq[sid][rar];
   return e.lv * RARITY[rar].mul;
 }
-/* 装備している5部位の合計効果 */
+/* ラン開始時に固定する恒久ボーナス（旧・装備の合計効果）。
+   装備は廃止。この器はそのまま「強化ショップ（アカウント共通）」の合計に載せ替える。
+   戦闘側は state.eb.* を読むだけなので、供給元を差し替えれば戦闘コードは無改修で済む。 */
 function equipBonus(){
-  const b = {exp:0,pick:0,hp:0,dr:0,atk:0,crit:0,spd:0,eva:0,sugar:0,area:0};
-  for(const sid of EQUIP_LIST){
-    const w = META.equipped[sid]; if(!w) continue;
-    const e = META.eq[sid][w.rar]; if(!e || e.lv<=0) continue;
-    const mul = RARITY[w.rar].mul;
-    for(const st of EQUIP_ITEMS[w.id].stats) b[st[0]] += st[1]*e.lv*mul;
-  }
-  b.dr = Math.min(45, b.dr);        // 被ダメージ軽減の上限
-  b.eva = Math.min(40, b.eva);      // 回避の上限
-  return b;
+  return shopBonus();
 }
 /* 装備の平均レベル（ステージの推奨戦力と比べる値）。レアリティは見ない。 */
 function equipAvgLv(){
@@ -1989,14 +2027,9 @@ function equipAvgLv(){
    指数の肩に乗る値なので、上限で必ず挟む。挟まないと
    全部位レジェンドLv10（実効21）でHPが5500を超えて発散する。 */
 const HP_LV_CAP = 12;
-function equipEffLv(){
-  let t=0;
-  for(const sid of EQUIP_LIST){
-    const w = META.equipped[sid];
-    if(w) t += META.eq[sid][w.rar].lv * RARITY[w.rar].mul;
-  }
-  return Math.min(HP_LV_CAP, t / EQUIP_LIST.length);
-}
+/* 装備由来の指数スケールは廃止。縦の強さはショップ（state.eb）とラン内へ移した。
+   playerAtkMul/playerMaxHp はこの 0 を受けて、gear では伸びなくなる。 */
+function equipEffLv(){ return 0; }
 /* 最大HP＝120×1.20^実効Lv。ステージ1段（適正Lv+2）ごとに ×1.44 になる。
    キャラのHPとラン中のパッシブは加算なので、指数の外で足す。
    指数の肩に混ぜると同じように発散する。 */
@@ -2536,17 +2569,7 @@ function weaponStat(w){
     s.size *= A; s.arc *= Math.min(1.6, A); s.radius *= (1 + (A-1)*0.5);
     return s;
   }
-  const m = META.wp[w.id];
-  if(m && m.lv>0){
-    s.dmg *= (1 + 0.05*m.lv);                       // 基礎攻撃力
-    const mk = d.meta;
-    if(mk){
-      if(mk.key==='cd') s.cd *= Math.max(0.4, 1 - mk.per*m.lv);
-      else s[mk.key] *= (1 + mk.per*m.lv);          // その武器に合った特性
-    }
-    if(m.lv>=5)  s.count += 1;                      // 数が増えるのはここだけ
-    if(m.lv>=10) s.count += 1;
-  }
+  // 武器のメタLv（厨房での恒久強化）は廃止。武器の強さはラン内（step/mods/進化）だけで決まる。
   if(w.evolved && d.evo){
     const m=d.evo.mul||{};
     for(const k in m){

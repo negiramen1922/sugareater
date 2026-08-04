@@ -1344,6 +1344,42 @@ const WAVE_PLAN = [
   {boss:'stage'},
 ];
 
+/* =========================================================================
+   ヴァンサバ式の「時間で進む長いラン」。約5分ごとにボスが出て、最後のボスで
+   クリア。ザコの小ウェーブは score を書かない＝時間だけで進む（倒す速さに
+   関係なく、時間が経つほど濃く・強くなる）。
+   長さは実測で詰める前提でノブにしてある。stage.segments で面ごとに上書き可。
+   ========================================================================= */
+const RUN_SEGMENTS_DEFAULT = 6;   // ボスの数（＝5分区切りの数）。1ラン ≈ 5分 × これ
+const BOSS_EVERY_MIN = 5;         // 何分ごとにボスを出すか（区切りの長さ）
+const SUBWAVE_SEC    = 60;        // サバイバル小ウェーブ1本の長さ（秒）
+const BOSS_TIME_GROWTH = 1.30;    // ボスは出るたび約1.3倍タフに（時間で強くなるプレイヤーに合わせる）
+function runSegments(stage){ return (stage && stage.segments) || RUN_SEGMENTS_DEFAULT; }
+function buildRunPlan(stage){
+  const segs   = runSegments(stage);
+  const perSeg = Math.max(1, Math.round((BOSS_EVERY_MIN*60)/SUBWAVE_SEC));   // 区切りあたりの小ウェーブ数
+  const roster = Math.max(1, (stage.order||[]).length);
+  const totalSub = segs*perSeg;
+  const plan = [];
+  let k = 0;
+  for(let b=0;b<segs;b++){
+    for(let s=0;s<perSeg;s++){
+      const d = totalSub>1 ? k/(totalSub-1) : 0;              // 0..1 でラン全体の進行
+      plan.push({
+        types: Math.min(roster, 1 + Math.round(d*(roster-1))),// 種類は時間で解禁されていく
+        time:  SUBWAVE_SEC,                                   // score を書かない＝時間だけで進む
+        cap:   Math.round(14 + (300-14)*d),                   // 密度（実測で詰める）
+        rate:  Math.round((6 + (52-6)*d)*10)/10,              // 毎秒の湧き上限
+        elite: Math.floor(d*3.5),
+        giftEvery: 46
+      });
+      k++;
+    }
+    plan.push({ boss: (b===segs-1) ? 'stage' : 'mid' });      // 各区切りの終わりにボス。最後はステージボス＝クリア
+  }
+  return plan;
+}
+
 /* ステージが持つのは「登場順に並べた敵」と難易度倍率とボスだけ */
 const STAGES = {
   intro:{
@@ -1362,6 +1398,7 @@ const STAGES = {
     ],
     // req は 0。適正Lvがステージ1段ごとに +2 で揃わないと、HPの ×1.44 の等比が崩れる。
     idx:1, rar:0, mul:1.0, req:0, bossHp:{mid:0.875, stage:0.455},
+    segments:3,                          // みならいは短め（約15分・ボス3体）。敵の種類が少ないので長すぎない
     midboss:'captain', boss:'ginger', tier:0
   },
   kitchen:{
@@ -1474,7 +1511,8 @@ let STAGE = STAGES.intro;
 function setStage(id){ STAGE = STAGES[id]||STAGE; }
 
 /* ウェーブ表はステージごとに差し替えられる。既定は WAVE_PLAN。 */
-function planOf(){ return STAGE.plan || WAVE_PLAN; }
+// ランごとに buildRunPlan で生成した時間駆動プランを使う（旧 STAGE.plan は参照しない）。
+function planOf(){ return state.plan || STAGE.plan || WAVE_PLAN; }
 function wavePlan(){ const P=planOf(); return P[Math.min(state.wave, P.length-1)]; }
 /* 今のウェーブで解禁されている敵から1体えらぶ。
    新しく解禁された種を出やすくして、変化に気づけるようにする。 */
@@ -1982,10 +2020,8 @@ function playerAtkMul(){ return Math.pow(ATK_GROWTH, equipEffLv()); }
    ボスHPも引き下げてバランスを取り直す。進化がLv10と遅い分だけ 2.5 よりは高めの 3.0 を初期値に。
    ※各ステージの bossHp[] は個別のボス実体HPに対する相対倍率。STAGE.mul は現状どこからも参照されない。 */
 const BOSS_HP_SCALE = 3.0;
-/* 中ボスは1回目がラン序盤、2回目が中盤に出る。プレイヤーの火力は
-   ランが進むほど跳ね上がるので、同じHPだと1回目だけが極端に硬くなる。
-   出る順番ごとに倍率を変えて、体感の重さを揃える。 */
-const MID_HP_STEP = [0.40, 1.00];
+/* ボスの重さは出るたびに BOSS_TIME_GROWTH で増やす（spawnBoss 内）。
+   旧 MID_HP_STEP（2体固定の重みテーブル）は多ボス化に伴い廃止。 */
 /* 敵1体の重みを変えるための倍率。ここだけ動かせば全部が連動する。
    雑魚が1発で消えると、重い武器も減速も固めも意味を持てないので、
    HPを上げて「倒すのに手数がかかる」状態を作る。
@@ -2591,12 +2627,12 @@ function spawnBoss(kind){
   // 直近の実火力から「狙った秒数で沈む量」を逆算し、上下限で挟む。
   // ボスHPは固定。プレイヤーが強くなればボスも硬くなる、では育成の意味が消えるため。
   // 戦闘時間のばらつきは「叩くほど柔らかくなる」仕組み（soft）のほうで吸収する。
-  // 中ボスは何体目かで重さを変える（midCount は倒したときに増えるので、
-  // 1体目を出す時点では0）。ステージボスは常に等倍。
-  const midStep = kind==='mid'
-    ? (MID_HP_STEP[Math.min(state.midCount||0, MID_HP_STEP.length-1)] || 1) : 1;
+  // 長いランでは時間とともにプレイヤーが跳ね上がるので、ボスも出るたびタフにする。
+  // bossSpawned は「これまでに出したボスの数」。1体目=×1、以降 BOSS_TIME_GROWTH 倍ずつ。
+  const timeMul = Math.pow(BOSS_TIME_GROWTH, state.bossSpawned||0);
   e.maxhp = e.hp = Math.round(d.hp * ((STAGE.bossHp && STAGE.bossHp[kind]) || 1)
-                              * BOSS_HP_SCALE * midStep);
+                              * BOSS_HP_SCALE * timeMul);
+  state.bossSpawned = (state.bossSpawned||0) + 1;
   e.soft = 0;
   e.stT = 1.4; e.tier = STAGE.tier||0;
   state.bossRef = e;
@@ -3962,7 +3998,8 @@ function updateWave(dt){
     state.waveScore = 0; state.waveT = 0; state.giftT = 0;
     waveSweep();
     const np = wavePlan();
-    banner(np.boss ? '' : 'WAVE ' + waveNo(), '#ffd84d');
+    // 毎分の「WAVE N」連呼はうるさいので出さない。次がボスの区切りだけ予告する。
+    if(np.boss) banner('ボスがくる！', '#ff5f8d');
     return;
   }
 
@@ -4032,6 +4069,23 @@ function waveNo(){
   const P=planOf(); let n=0;
   for(let i=0;i<=state.wave && i<P.length;i++) if(!P[i].boss) n++;
   return n;
+}
+function fmtClock(sec){
+  sec = Math.max(0, Math.floor(sec));
+  const m = Math.floor(sec/60), s = sec%60;
+  return m+':'+String(s).padStart(2,'0');
+}
+/* 次のボスが出るまでの残り秒（サバイバル小ウェーブの残り時間の合計）。 */
+function timeToNextBoss(){
+  const P = planOf();
+  let t = 0;
+  const cur = P[Math.min(state.wave, P.length-1)];
+  if(cur && !cur.boss) t += Math.max(0, (cur.time||0) - state.waveT);
+  for(let i=state.wave+1; i<P.length; i++){
+    if(P[i].boss) break;
+    t += P[i].time||0;
+  }
+  return t;
 }
 /* 装備ドロップ（現状は個数の記録のみ。厳選と装備画面はフェーズ4） */
 /* 設計図のドロップ数。後半のステージほど多く落ちる。
@@ -6638,10 +6692,17 @@ function updateHud(){
     $('wavechip').textContent = state.testMode ? 'TEST' : (state.phase==='midboss' ? 'MID BOSS' : 'BOSS');
   } else {
     bw.classList.add('hidden'); ww.classList.remove('hidden');
-    $('wavechip').textContent = 'WAVE '+waveNo();
-    const need = (p.score||1)*WAVE_SCORE_SCALE;
-    $('wavefill').style.width = Math.min(100, state.waveScore/need*100)+'%';
-    $('wavetext').textContent = 'あと '+Math.max(0, Math.ceil(need-state.waveScore));
+    if(p.score){                                 // 旧スコア式ウェーブ（フォールバック）
+      $('wavechip').textContent = 'WAVE '+waveNo();
+      const need = p.score*WAVE_SCORE_SCALE;
+      $('wavefill').style.width = Math.min(100, state.waveScore/need*100)+'%';
+      $('wavetext').textContent = 'あと '+Math.max(0, Math.ceil(need-state.waveScore));
+    } else {                                     // 時間駆動ラン：経過時計＋次のボスまでのカウントダウン
+      $('wavechip').textContent = fmtClock(state.t);
+      const tb = timeToNextBoss();
+      $('wavefill').style.width = Math.min(100, state.waveT/(p.time||1)*100)+'%';
+      $('wavetext').textContent = 'つぎのボスまで '+fmtClock(tb);
+    }
   }
   const sb=$('skillbtn');
   if(state.cb.skill){
@@ -7472,7 +7533,8 @@ function startRun(){
     paused:false, obanN:0, slowmo:0,
   wave:0, waveScore:0, waveT:0, phase:'wave', bossRef:null, eliteT:0, drops:0,
   dmgAcc:0, dmgT:0, dps:0, shockT:0, sugar:0, loot:[],
-  spawnAcc:0, giftT:0, midCount:0, rouletteLeft:0, exPending:0, shield:0, shieldMax:0, shieldT:0,
+  spawnAcc:0, giftT:0, midCount:0, bossSpawned:0, rouletteLeft:0, exPending:0, shield:0, shieldMax:0, shieldT:0,
+  plan:null,                            // startRun 末尾で buildRunPlan を入れる
     arena:null, bossRef:null,          // ボス戦で力尽きたとき、輪が次のランに残っていた
   kpsWindow:[], kpsBest:0, kpsNow:0, shake:0, flashT:0, flashG:0,
     testMode:false, testInvuln:false, testBoss:null,   // 通常のランではテストモードを必ず切る
@@ -7486,6 +7548,7 @@ function startRun(){
   $('pausebtn').style.display='block';
   state.paused=false; $('pause').classList.add('hidden');
   if(!META.loadout.length) META.loadout = ['oban'];
+  state.plan = buildRunPlan(STAGE);  // 時間駆動の長いラン（約5分ごとにボス）
   state.eb = equipBonus();          // 装備の効果はランの間ずっと固定
   state.cb = charBonus();           // キャラの効果も同様
   // 最大HPは装備とキャラを足してから決まる。素の値のまま始めると欠けた状態になる。

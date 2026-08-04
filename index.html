@@ -2099,7 +2099,7 @@ const zones = makePool(CFG.MAX_ZONE, ()=>({x:0,y:0,r:0,dps:0,life:0,max:0,slow:0
                                             stun:0, look:'', warm:0, impact:0}));
 const sweeps= makePool(CFG.MAX_SWEEP, ()=>({ang:0,arc:0,r:0,life:0,max:0,dir:1,wid:''}));
 const stabs = makePool(16, ()=>({x:0,y:0,r:0,dmg:0,t:0,left:0,zone:0,zr:0}));
-const beams = makePool(8, ()=>({x:0,y:0,ang:0,len:0,w:0,t:0,tell:0,fire:0,dmg:0,sweep:0,hit:0,noTrack:0}));
+const beams = makePool(8, ()=>({x:0,y:0,ang:0,len:0,w:0,t:0,tell:0,fire:0,dmg:0,sweep:0,hit:0,noTrack:0,track:0}));
 const links = makePool(120, ()=>({x1:0,y1:0,x2:0,y2:0,life:0,max:0,w:3,
   off:new Float32Array(4)}));
 
@@ -2676,8 +2676,8 @@ function setTestPassive(id, d){
 function bossPhaseLabel(){
   const b = state.bossRef; if(!b || !b.maxhp) return '';
   const hpr = b.hp/b.maxhp;
-  // 将軍・ジンジャーはHP帯の境目が違う（50%/20%）。他のボスは従来どおり（70%/35%）。
-  const custom = b.type==='captain' || b.type==='ginger';
+  // 将軍・ジンジャー・オーブンはHP帯の境目が違う（50%/20%）。他は従来どおり（70%/35%）。
+  const custom = b.type==='captain' || b.type==='ginger' || b.type==='oven';
   const ph = custom
     ? (hpr>0.5 ? 1 : (hpr>0.2 ? 2 : 3))
     : (hpr>0.7 ? 1 : (hpr>0.35 ? 2 : 3));
@@ -4432,82 +4432,85 @@ function drawChargeWarn(e, cx, cy){
    ・一歩も動かない。プレイヤーが位置を選べるので、弾は必ず読めるものにする
    ・扉を開けてクッキーを焼き出す（雑魚が湧く唯一のボス戦）
    ・弾幕は4種。どれも隙間があり、移動だけで抜けられること */
+/* ---- クッキーオーブンの部品（ビーム主体のボス） ---- */
+function ovenRing(e, d, n, med){                    // 円形弾幕（med=中弾幕の大きめ玉）
+  const off = Math.random()*6.283;
+  for(let k=0;k<n;k++) ovenShot(e, e.x, e.y, off + k/n*6.283, d.bSpeed*(med?0.55:0.8), med?15:7);
+}
+function ovenFan(e, d, n){                           // 自機狙いの扇
+  const a0 = Math.atan2(state.py-e.y, state.px-e.x);
+  for(let k=0;k<n;k++) ovenShot(e, e.x, e.y, a0 + (k-(n-1)/2)*0.18, d.bSpeed*1.1, 8);
+  AU.play('boss_shot');
+}
+function ovenStraightMed(e, d){                      // 自機方向へ直進する中弾幕
+  const a0 = Math.atan2(state.py-e.y, state.px-e.x);
+  ovenShot(e, e.x, e.y, a0, d.bSpeed*0.95, 15);
+}
+function ovenScatterBeam(e, d){                      // 乱射ビーム：ランダム方向へ細めのビーム
+  const a = Math.random()*6.283;
+  const sweep = (Math.random()<0.5?-1:1)*(0.3+Math.random()*0.4);
+  fireBeam(e, d, sweep, a, true, {w:22, tell:0.45, fire:0.35});
+}
+function ovenThickBeam(e, d, track){                 // 極太ビーム（追従 or 自機狙い固定）
+  fireBeam(e, d, 0, track ? undefined : Math.atan2(state.py-e.y, state.px-e.x), !track,
+           {w: track?66:76, tell: track?1.0:1.1, fire: track?1.6:0.7, dmgMul: track?1.2:1.4, track:!!track});
+}
+/* クッキーオーブン：一歩も動かないビーム砲台。HP帯で手数が増える。
+   ・第1（100–50%）：乱射ビーム → 円形弾幕×3
+   ・第2（50–20%）：乱射ビーム → 自機狙いの極太ビーム → 中円形×3
+   ・第3（20%以下）：乱射ビーム → 追従極太を撃ちながら扇×5 → 円形＋直進中弾幕×3 → 4方向ビーム */
 function bossOven(e, d, dt, nx, ny, dist){
   e.patT -= dt; e.bt -= dt;
-  e.wob += dt*3;                                    // 火の揺らぎ（描画用）
-  if(e.pat===0){                                    // 待機：扉が閉じている
-    if(e.patT<=0){
-      const r = Math.random();
-      e.pat = r < (0.26 + e.ph*0.04) ? 9            // クッキーを焼き出す
-            : r < 0.48 ? 1                          // 天板払い：横一線が上下に流れる
-            : r < 0.70 ? 2                          // 焼きムラ：隙間つきの全方位リング
-            : r < 0.88 ? 3                          // 火花：自機狙いの扇
-            : 4;                                    // 熱風：ゆっくり広がる大玉
-      e.patT = 2.4; e.bt = 0;
-      e.wx = Math.random()<0.5 ? 1 : -1;            // 天板払いの向き
+  e.wob += dt*3;                                     // 火の揺らぎ（描画用）
+  const hpr = e.hp/e.maxhp;
+  const cph = hpr>0.5 ? 1 : (hpr>0.2 ? 2 : 3);
+  e.cph = cph;
+  const SCATTER = 6, THICKWAIT = 2.0, BEAMWAIT = 1.9;
+  const adv  = (dur)=>{ e.pat++;  e.sub=0; e.bt=0; e.patT=dur||0; };
+  const loop = (dur)=>{ e.pat=0;  e.sub=0; e.bt=0; e.patT=dur||0; };
+  if(e.gph!==cph){ e.gph=cph; e.pat=0; e.sub=0; e.bt=0; e.patT=0; }
+
+  if(cph===1){                                       // 乱射ビーム → 円形弾幕×3
+    if(e.pat===0){
+      if(e.bt<=0 && e.sub<SCATTER){ ovenScatterBeam(e,d); e.sub++; e.bt=0.32; }
+      if(e.sub>=SCATTER && e.bt<=0) adv(0.5);
+    } else {
+      if(e.bt<=0 && e.sub<3){ ovenRing(e,d,22,false); AU.play('boss_shot'); e.sub++; e.bt=0.6; }
+      if(e.sub>=3 && e.bt<=0) loop(0);
     }
   }
-  else if(e.pat===1){                               // 天板払い：横並びの弾が縦に流れる
-    if(e.bt<=0){
-      e.bt = 0.42 - e.ph*0.06;
-      const n = 7 + e.ph;
-      const gap = Math.floor(Math.random()*n);      // 1箇所だけ必ず空ける
-      for(let k=0;k<n;k++){
-        if(k===gap) continue;
-        const ox = (k-(n-1)/2) * 78;
-        ovenShot(e, e.x+ox, e.y - e.wx*300, Math.PI/2*e.wx, d.bSpeed*0.9, 8);
+  else if(cph===2){                                  // 乱射ビーム → 極太（自機狙い）→ 中円形×3
+    if(e.pat===0){
+      if(e.bt<=0 && e.sub<SCATTER){ ovenScatterBeam(e,d); e.sub++; e.bt=0.3; }
+      if(e.sub>=SCATTER && e.bt<=0) adv(0);
+    } else if(e.pat===1){
+      if(e.sub===0){ ovenThickBeam(e,d,false); e.sub=1; e.patT=THICKWAIT; }
+      if(e.patT<=0) adv(0);
+    } else {
+      if(e.bt<=0 && e.sub<3){ ovenRing(e,d,16,true); AU.play('boss_shot'); e.sub++; e.bt=0.6; }
+      if(e.sub>=3 && e.bt<=0) loop(0);
+    }
+  }
+  else {                                             // 乱射ビーム → 追従極太+扇×5 → 円形+直進中弾幕×3 → 4方向ビーム
+    if(e.pat===0){
+      if(e.bt<=0 && e.sub<SCATTER){ ovenScatterBeam(e,d); e.sub++; e.bt=0.28; }
+      if(e.sub>=SCATTER && e.bt<=0) adv(0);
+    } else if(e.pat===1){
+      if(e.sub===0){ ovenThickBeam(e,d,true); e.sub=1; e.patT=2.6; e.ripLeft=5; e.bt=0.5; }
+      if(e.bt<=0 && e.ripLeft>0){ ovenFan(e,d,5); e.ripLeft--; e.bt=0.42; }
+      if(e.patT<=0) adv(0);
+    } else if(e.pat===2){
+      if(e.bt<=0 && e.sub<3){
+        ovenRing(e,d,20,false);
+        for(let k=0;k<3;k++) ovenStraightMed(e,d);   // 円形の中に直進する中弾幕連射
+        AU.play('boss_shot');
+        e.sub++; e.bt=0.55;
       }
-      AU.play('boss_shot');
+      if(e.sub>=3 && e.bt<=0) adv(0);
+    } else {
+      if(e.sub===0){ gBeams(e,d,4); e.sub=1; e.patT=BEAMWAIT; }
+      if(e.patT<=0) loop(0);
     }
-    if(e.patT<=0){ e.pat=0; e.patT=1.5-e.ph*0.25; }
-  }
-  else if(e.pat===2){                               // 焼きムラ：隙間つきリング
-    if(e.bt<=0){
-      e.bt = 0.85 - e.ph*0.12;
-      const n = 22 + e.ph*4, hole = Math.random()*6.283, w = 0.75;
-      for(let k=0;k<n;k++){
-        const a = k/n*6.283;
-        let da = Math.atan2(Math.sin(a-hole), Math.cos(a-hole));
-        if(Math.abs(da) < w) continue;               // 抜け道
-        ovenShot(e, e.x, e.y, a, d.bSpeed*0.8, 7);
-      }
-      AU.play('boss_shot');
-    }
-    if(e.patT<=0){ e.pat=0; e.patT=1.6-e.ph*0.25; }
-  }
-  else if(e.pat===3){                               // 火花：自機狙いの扇
-    if(e.bt<=0){
-      e.bt = 0.5 - e.ph*0.08;
-      const a0 = Math.atan2(state.py-e.y, state.px-e.x);
-      const n = 3 + e.ph;
-      for(let k=0;k<n;k++)
-        ovenShot(e, e.x, e.y, a0 + (k-(n-1)/2)*0.26, d.bSpeed*1.25, 6);
-      AU.play('boss_shot');
-    }
-    if(e.patT<=0){ e.pat=0; e.patT=1.4-e.ph*0.2; }
-  }
-  else if(e.pat===4){                               // 熱風：遅い大玉。避けるより離れる
-    if(e.bt<=0){
-      e.bt = 0.95;
-      const n = 6 + e.ph*2, off = Math.random()*6.283;
-      for(let k=0;k<n;k++)
-        ovenShot(e, e.x, e.y, off + k/n*6.283, d.bSpeed*0.42, 18, 1.5);
-      AU.play('boss_shot');
-    }
-    if(e.patT<=0){ e.pat=0; e.patT=1.7-e.ph*0.25; }
-  }
-  else {                                            // クッキーを焼き出す
-    if(e.bt<=0){
-      e.bt = 0.7;
-      const n = 2 + e.ph;
-      for(let k=0;k<n;k++){
-        const a = -Math.PI/2 + (Math.random()-0.5)*2.2, r = e.r*0.9;
-        spawnEnemy(d.spawns, e.x+Math.cos(a)*r, e.y+Math.sin(a)*r);
-      }
-      state.shake = Math.min(9, state.shake+2);
-      AU.play('e_boom');
-    }
-    if(e.patT<=0){ e.pat=0; e.patT=1.6-e.ph*0.25; }
   }
 }
 /* オーブンの弾。任意の位置から撃てるようにしてある（天板払いで使う） */
@@ -5005,14 +5008,18 @@ function bossRing(e, d, n, offset, gap){
 
 /* ビーム：弾ではないので、おぼんでは防げない。
    その代わり予告が長く、線から出れば当たらない。 */
-function fireBeam(e, d, sweep, angFixed, noTrack){
+function fireBeam(e, d, sweep, angFixed, noTrack, opt){
   const b = beams.spawn(); if(!b) return;
   b.x=e.x; b.y=e.y;
   b.ang = (angFixed!==undefined) ? angFixed : Math.atan2(state.py-e.y, state.px-e.x);
   b.noTrack = noTrack?1:0;
   b.len = Math.max(view.w, view.h)*1.5;
-  b.w = 26; b.tell = 1.0; b.fire = 0.75; b.t = 0;
-  b.dmg = d.bDmg*1.7; b.sweep = sweep||0; b.hit = 0;
+  b.w    = (opt&&opt.w!==undefined)    ? opt.w    : 26;
+  b.tell = (opt&&opt.tell!==undefined) ? opt.tell : 1.0;
+  b.fire = (opt&&opt.fire!==undefined) ? opt.fire : 0.75;
+  b.t = 0;
+  b.dmg = d.bDmg*1.7*((opt&&opt.dmgMul)||1);
+  b.sweep = sweep||0; b.hit = 0; b.track = (opt&&opt.track)?1:0;
   AU.play('beam_warn', 0);
 }
 function updateBeams(dt){
@@ -5028,7 +5035,13 @@ function updateBeams(dt){
     }
     if(!b.hit){ b.hit=1; AU.play('beam_fire', 0); }
     if(b.t > b.tell + b.fire){ beams.removeAt(i); continue; }
-    b.ang += b.sweep*dt;
+    if(b.track){                         // 追従極太：発射中もゆっくり自機を追う
+      const want = Math.atan2(state.py-b.y, state.px-b.x);
+      const da = Math.atan2(Math.sin(want-b.ang), Math.cos(want-b.ang));
+      b.ang += Math.max(-1.4*dt, Math.min(1.4*dt, da));
+    } else {
+      b.ang += b.sweep*dt;
+    }
     // 線分と自機の距離で判定
     const dx=state.px-b.x, dy=state.py-b.y;
     const proj = dx*Math.cos(b.ang) + dy*Math.sin(b.ang);

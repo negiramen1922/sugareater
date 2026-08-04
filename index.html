@@ -1751,7 +1751,7 @@ const PLOADOUT_MAX = 6;              // 持ち込めるパッシブの数
 const META = { sugar:0, wp:{}, ps:{}, eq:{}, equipped:{}, ch:{}, chosen:'chef',
                loadout:['rollingpin','knife','oban','spoon','lemon'],
                ploadout:['shoes','apron','tongs','book','stew'],
-               runs:0, clears:0, best:0 };
+               runs:0, clears:0, best:0, cleared:{} };
 for(const id of WEAPON_LIST) META.wp[id] = {pieces:0, lv:0, own:0};
 for(const id of ['rollingpin','knife','oban','spoon','lemon']) META.wp[id].own = 1;   // 最初から使える5本
 for(const id of PASSIVE_LIST) META.ps[id] = {pieces:0, lv:0, own:0};
@@ -1801,6 +1801,7 @@ function metaLoad(){
     if(!raw) return;
     const o = JSON.parse(raw);
     META.sugar = o.sugar||0; META.runs=o.runs||0; META.clears=o.clears||0; META.best=o.best||0;
+    if(o.cleared && typeof o.cleared==='object') for(const k in o.cleared) if(STAGES[k]) META.cleared[k]=!!o.cleared[k];
     for(const id of WEAPON_LIST) if(o.wp && o.wp[id]){
       META.wp[id].pieces = o.wp[id].pieces||0;
       META.wp[id].lv = Math.min(WEAPON_MAX_LV, o.wp[id].lv||0);
@@ -7538,7 +7539,9 @@ function devSet(kind, val, rar){
     for(const id of WEAPON_LIST) META.wp[id]={pieces:0, lv:0, own:0};
     for(const id of ['rollingpin','knife','oban','spoon','lemon']) META.wp[id].own=1;
     META.loadout=['rollingpin','knife','oban','spoon','lemon'];
-    for(const id of CHAR_LIST)   META.ch[id]={pieces:0, lv: id==='chef'?1:0};
+    for(const id of CHAR_LIST)   META.ch[id]={pieces:0, lv: id==='chef'?CHAR_MAX_LV:0};
+    for(const id of SHOP_LIST)   META.shop[id]=0;
+    for(const id of WEAPON_LIST) META.mastery[id]=0;
     for(const sid of EQUIP_LIST){
       for(const r of RARITY_ORDER) META.eq[sid][r]={pieces:0, lv:0};
       META.equipped[sid]=null;
@@ -7547,7 +7550,7 @@ function devSet(kind, val, rar){
     for(const id of PASSIVE_LIST) META.ps[id]={pieces:0, lv:0, own:0};
     for(const id of ['shoes','apron','tongs','book','stew']) META.ps[id].own=1;
     META.ploadout=['shoes','apron','tongs','book','stew'];
-    META.chosen='chef'; META.runs=0; META.clears=0; META.best=0;
+    META.chosen='chef'; META.runs=0; META.clears=0; META.best=0; META.cleared={};
   }
   metaSave(); AU.play('ui'); renderKitchen();
 }
@@ -7608,16 +7611,22 @@ function renderDevTab(){
       b.addEventListener('click', ()=> devSet(b.dataset.k, +b.dataset.v, b.dataset.r));
   });
 }
+/* ステージ解放は「前の面をクリア」で進むクリア制（装備戦力ゲートは廃止）。 */
 function renderStages(){
-  const avg = equipAvgLv();
-  $('k-stages').innerHTML = Object.values(STAGES).map(st=>{
-    const ok = avg >= st.req;
-    return `<button class="stg${STAGE.id===st.id?' on':''}" data-id="${st.id}">
+  const list = Object.values(STAGES).sort((a,b)=>a.idx-b.idx);
+  const isOpen = st => {
+    if(st.idx<=1) return true;
+    const prev = list.find(s=>s.idx===st.idx-1);
+    return prev ? !!META.cleared[prev.id] : true;
+  };
+  $('k-stages').innerHTML = list.map(st=>{
+    const open = isOpen(st), done = !!META.cleared[st.id];
+    return `<button class="stg${STAGE.id===st.id?' on':''}${open?'':' lock'}" data-id="${st.id}" ${open?'':'disabled'}>
       <span class="sn">${st.idx}. ${st.name}</span>
-      <span class="sr" style="color:${ok?'var(--pistachio)':'#8a6a4a'}">
-        推奨 装備平均 Lv${st.req}</span></button>`;
+      <span class="sr" style="color:${open?(done?'var(--lemon)':'var(--pistachio)'):'#8a6a4a'}">
+        ${open?(done?'クリア済み':'挑戦できる'):'🔒 前の面をクリアで解放'}</span></button>`;
   }).join('');
-  $('k-stages').querySelectorAll('.stg').forEach(b=>
+  $('k-stages').querySelectorAll('.stg:not([disabled])').forEach(b=>
     b.addEventListener('click', ()=>{ STAGE = STAGES[b.dataset.id]; AU.play('ui'); renderKitchen(); }));
 }
 function renderWeaponTab(){
@@ -7790,7 +7799,7 @@ function showResult(){
     else if(l.kind==='ps') grantPassiveBp(l.id, l.rarity);
     else grantBlueprint(l.id, l.rarity);
   }
-  META.runs++; if(cleared) META.clears++;
+  META.runs++; if(cleared){ META.clears++; META.cleared[STAGE.id]=true; }
   META.best = Math.max(META.best, state.kills);
   metaSave();
   $('res-title').textContent = cleared?'STAGE CLEAR':'DEVOURED';

@@ -37,5 +37,15 @@ R.ok(ev("detailChar('glutton').includes('upC')||META.ch.glutton.lv>0"), '未解�
 ev("META.sugar=100000; if(META.ch.glutton.lv<=0){ upgradeChar('glutton'); }");
 R.eq(ev("META.ch.glutton.lv"), ev('CHAR_MAX_LV'), '解放したキャラは全開(CHAR_MAX_LV)');
 
+// ステージ解放はクリア制：1面は常に開く、2面は1面クリアで開く。
+ev("META.cleared={};");
+const stageList = ev("Object.values(STAGES).sort((a,b)=>a.idx-b.idx).map(s=>s.id)");
+ev("kTab='home'; renderKitchen();");
+R.ok(ev("$('k-stages').innerHTML.includes('前の面をクリアで解放')"), '未クリアの先の面はロック表示');
+// 1面をクリア扱いにすると2面が開く。
+ev(`META.cleared['${stageList[0]}']=true; renderStages();`);
+R.ok(ev(`(function(){var b=$('k-stages').querySelector('[data-id=\\'${stageList[1]}\\']'); return b && !b.disabled;})()`),
+     '1面クリアで2面が解放される');
+
 R.ok(errors.length === 0, '一連の描画で JS エラーなし' + (errors.length ? ' → ' + errors[0] : ''));
 R.done();

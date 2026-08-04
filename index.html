@@ -4116,25 +4116,14 @@ function dropCount(kind){
   if(kind==='elite') return 1 + Math.floor(r/2);
   return Math.round((kind==='mid' ? 4 : 7) * (1 + r*0.22));
 }
+const LOOT_SUGAR = 14;   // 戦利品1個あたりのシュガー基礎値（レア度で倍加）
 function dropLoot(e){
   const n = e.boss ? dropCount(state.phase==='midboss' ? 'mid' : 'boss') : dropCount('elite');
   const tier = e.boss ? (state.phase==='midboss' ? 1 : 2) : 0;
+  // 設計図制は廃止。エリート/ボスの戦利品はシュガーに一本化する（レア度が高いほど多い）。
   for(let i=0;i<n;i++){
     const rarity = rollRarity(tier);
-    const r = Math.random();
-    if(r < 0.10){                                   // キャラの設計図
-      const cid = CHAR_LIST[(Math.random()*CHAR_LIST.length)|0];
-      state.loot.push({kind:'ch', id:cid, rarity});
-    } else if(r < 0.46){                            // 装備の設計図
-      const iid = EQUIP_ITEM_LIST[(Math.random()*EQUIP_ITEM_LIST.length)|0];
-      state.loot.push({kind:'eq', id:iid, rarity});
-    } else if(r < 0.68){                            // パッシブの設計図
-      const pid = PASSIVE_LIST[(Math.random()*PASSIVE_LIST.length)|0];
-      state.loot.push({kind:'ps', id:pid, rarity});
-    } else {                                        // 武器の設計図
-      const id = WEAPON_LIST[(Math.random()*WEAPON_LIST.length)|0];
-      state.loot.push({kind:'wp', id, rarity});
-    }
+    state.sugar += (BP_BONUS[rarity]||1) * LOOT_SUGAR;
   }
   state.drops += n;
   for(let i=0;i<n;i++){
@@ -7121,7 +7110,7 @@ function setPause(on){
      +`<span>Lv <b>${state.level}</b></span>`
      +`<span>撃破 <b>${state.kills}</b></span>`
      +`<span>砂糖 <b>${Math.round(state.sugar)}</b></span>`
-     +`<span>設計図 <b>${state.drops}</b></span>`;
+     +`<span>戦利品 <b>${state.drops}</b></span>`;
     renderPauseBuild();
     $('pause').classList.remove('hidden');
   } else {

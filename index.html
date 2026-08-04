@@ -1091,6 +1091,24 @@ const WEAPONS = {
   },
 };
 const WEAPON_LIST = Object.keys(WEAPONS).filter(k=>!WEAPONS[k].innate);
+/* 武器カテゴリ：近接／遠隔／設置・支援 の3系統。属性ではなく「間合い・届け方」で分ける。
+   マスタリーの同カテゴリ加算（別武器の撃破でも薄く貯まる）に使う。
+   近接6・遠隔7・設置6＝計19。1本1ホーム。 */
+const WEAPON_CATEGORY = {
+  // 近接（振る・まとう・自分中心）
+  oban:'melee', rollingpin:'melee', mallet:'melee', bell:'melee', burner:'melee', fork:'melee',
+  // 遠隔（飛ばす・投げる・射撃）
+  knife:'ranged', pepper:'ranged', chopsticks:'ranged', stockpot:'ranged', spoon:'ranged', lemon:'ranged', foil:'ranged',
+  // 設置・支援（置く・粘る・守る・操る）
+  kettle:'zone', fryer:'zone', honey:'zone', whisk:'zone', wrap:'zone', cream:'zone',
+};
+const CATEGORY_INFO = {
+  melee: {id:'melee',  name:'近接', icon:'🌀'},
+  ranged:{id:'ranged', name:'遠隔', icon:'🎯'},
+  zone:  {id:'zone',   name:'設置', icon:'🕸'},
+};
+const CATEGORY_LIST = Object.keys(CATEGORY_INFO);
+function weaponCategory(id){ return WEAPON_CATEGORY[id] || null; }
 /* 武器ごとの強化軸の上限。書いていない武器は既定値を使う。
    0 にすると「その武器はその軸を伸ばせない」。
    伸ばせない軸がある武器は、代わりに別の軸を1段多く積める。 */
@@ -1749,6 +1767,17 @@ for(const id of EQUIP_LIST){
 META.eqown = {};                          // 見つけたアイテム
 for(const id of EQUIP_ITEM_LIST) META.eqown[id] = 0;
 
+/* マスタリー：武器ごとの累計ポイント。使い込む（使用中の武器で撃破）と貯まり、
+   同カテゴリの所持済み武器（未編成）も薄く貯まる。数値ではなく「分岐」を解放する土台。
+     使用中の武器            … 撃破ごと +1
+     同カテゴリ・所持済み・未編成 … 撃破ごと +1/20（義務化を避けるための draft）
+     未所持・別カテゴリ        … 0
+   進化で専用パッシブ解禁、累計しきい値で選択肢増、を後段で接ぐ。 */
+const MASTERY_KILL  = 1;
+const MASTERY_DRAFT = 0.05;
+META.mastery = {};
+for(const id of WEAPON_LIST) META.mastery[id] = 0;
+
 function metaLoad(){
   try{
     const raw = localStorage.getItem(META_KEY);
@@ -1782,10 +1811,35 @@ function metaLoad(){
                            && RARITY[w.rar]) ? {id:w.id, rar:w.rar} : null;
     }
     for(const id of EQUIP_ITEM_LIST) if(o.eqown) META.eqown[id] = o.eqown[id]||0;
+    if(o.mastery) for(const id of WEAPON_LIST) META.mastery[id] = o.mastery[id]||0;
   }catch(e){ /* 保存が使えない環境ではその場かぎりの進行になる */ }
 }
 function metaSave(){
   try{ localStorage.setItem(META_KEY, JSON.stringify(META)); }catch(e){}
+}
+/* 撃破1体ぶんのマスタリー加算。全弾同時発射のこのジャンルでは「最後に当てた武器」は
+   ほぼ偶然なので、ラストヒットではなく「使用中の武器」に加算する（実態にも合う）。
+     使用中（state.weapons の非固有）… +MASTERY_KILL
+     同カテゴリ・所持済み・未編成      … +MASTERY_DRAFT
+     未所持・別カテゴリ               … 0
+   セーブはランごとにまとめて行う（撃破ごとに書くと重い）。 */
+function grantMastery(){
+  if(!state || state.testMode) return;             // ボス練習モードは進行を汚さない
+  const inRun = new Set(), catsUsed = new Set();
+  for(const w of state.weapons){
+    if(!w || w.innate) continue;
+    const cat = weaponCategory(w.id);
+    if(!cat) continue;
+    inRun.add(w.id); catsUsed.add(cat);
+    META.mastery[w.id] = (META.mastery[w.id]||0) + MASTERY_KILL;
+  }
+  if(!catsUsed.size) return;
+  for(const id of WEAPON_LIST){
+    if(inRun.has(id)) continue;                    // 使用中は上で加算済み
+    if(!META.wp[id] || !META.wp[id].own) continue; // 未所持は貯まらない
+    if(catsUsed.has(weaponCategory(id)))           // 同カテゴリだけ薄く
+      META.mastery[id] = (META.mastery[id]||0) + MASTERY_DRAFT;
+  }
 }
 const BP_CURVE = [1,1,2,2,3,4,5,6,8,10];       // 各レベルに必要な設計図の枚数
 function metaMax(id){ return WEAPON_MAX_LV; }
@@ -2776,6 +2830,7 @@ function markKilled(e){
   if(e.dead) return;
   e.dead = true;
   state.kills++;
+  grantMastery();                        // 使用中の武器＋同カテゴリにマスタリー加算
   state.kpsWindow.push(state.t);
   state.codex[e.type] = (state.codex[e.type]||0)+1;
   state.waveScore += e.score||0;         // ウェーブ進行はスコアで数える

@@ -19,6 +19,7 @@ TESTS=(
   pantest.js    # フライパンは攻撃するが弾は弾かない
   sprtest.js    # 立ち絵 w_pan が実際に描画される・武器sprの整合
   progtest.js   # 育成ModelA（全カードでLv上昇・Lv10進化のみ・進化後打ち止め）＋ボスHP2倍
+  catetest.js   # 武器カテゴリ（近接/遠隔/設置 6/7/6）とマスタリー加算
 )
 
 fail=0

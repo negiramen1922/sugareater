@@ -37,8 +37,8 @@ R.ok(ev(`buildChoicePool().filter(c=>c.id==='knife').every(c=>c.kind!=='evolve')
 ev(`state.weapons=[{id:'knife',lv:10,step:7,evolved:true,cd:0,phase:0,burst:0,burstT:0,mods:{dmg:0,count:0,spd:0,area:0}}];`);
 R.eq(ev(`buildChoicePool().filter(c=>c.id==='knife').length`), 0, '進化後はカードを出さない');
 
-// ボスHP全体2倍（BOSS_HP_SCALE 5.0）。
-R.eq(ev('BOSS_HP_SCALE'), 5, 'BOSS_HP_SCALE は 5.0（2倍）');
+// 装備の縦火力を撤去したのでボスHPを引き下げ（5.0→3.0）。実測で詰める主ノブ。
+R.eq(ev('BOSS_HP_SCALE'), 3, 'BOSS_HP_SCALE は 3.0（gear撤去に合わせて再調整）');
 
 R.ok(errors.length === 0, '一連の処理で JS エラーなし' + (errors.length ? ' → ' + errors[0] : ''));
 R.done();

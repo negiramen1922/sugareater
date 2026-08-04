@@ -5044,10 +5044,11 @@ function updateBeams(dt){
     }
     if(!b.hit){ b.hit=1; AU.play('beam_fire', 0); }
     if(b.t > b.tell + b.fire){ beams.removeAt(i); continue; }
-    if(b.track){                         // 追従極太：発射中もゆっくり自機を追う
+    if(b.track){                         // 追従極太：発射中もゆっくり自機を追う（全力周回なら振り切れる速さ）
       const want = Math.atan2(state.py-b.y, state.px-b.x);
       const da = Math.atan2(Math.sin(want-b.ang), Math.cos(want-b.ang));
-      b.ang += Math.max(-1.4*dt, Math.min(1.4*dt, da));
+      const rate = 0.55;                 // rad/s。プレイヤーの周回角速度より遅めにして逃げ道を残す
+      b.ang += Math.max(-rate*dt, Math.min(rate*dt, da));
     } else {
       b.ang += b.sweep*dt;
     }

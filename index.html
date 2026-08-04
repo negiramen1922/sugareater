@@ -1756,7 +1756,7 @@ for(const id of WEAPON_LIST) META.wp[id] = {pieces:0, lv:0, own:0};
 for(const id of ['rollingpin','knife','oban','spoon','lemon']) META.wp[id].own = 1;   // 最初から使える5本
 for(const id of PASSIVE_LIST) META.ps[id] = {pieces:0, lv:0, own:0};
 for(const id of ['shoes','apron','tongs','book','stew']) META.ps[id].own = 1;   // 最初から使える5つ
-for(const id of CHAR_LIST) META.ch[id] = {pieces:0, lv: id==='chef' ? 1 : 0};
+for(const id of CHAR_LIST) META.ch[id] = {pieces:0, lv: id==='chef' ? CHAR_MAX_LV : 0};   // chef は初期解放（全開）
 for(const id of EQUIP_LIST){
   META.eq[id] = {};
   for(const r of RARITY_ORDER) META.eq[id][r] = {pieces:0, lv:0};   // lv=0 は未所持
@@ -1818,6 +1818,9 @@ function metaLoad(){
     if(Array.isArray(o.ploadout)) META.ploadout = o.ploadout.filter(id=>PASSIVES[id]).slice(0,PLOADOUT_MAX);
     if(!META.ploadout.length) META.ploadout = ['shoes','apron','tongs','book','stew'];
     for(const id of CHAR_LIST) if(o.ch && o.ch[id]) Object.assign(META.ch[id], o.ch[id]);
+    // レベル制は廃止：旧セーブで解放済み（lv>0）のキャラは全開に、chef は常に解放。
+    for(const id of CHAR_LIST) if(META.ch[id].lv>0) META.ch[id].lv = CHAR_MAX_LV;
+    META.ch.chef.lv = CHAR_MAX_LV;
     if(o.chosen && CHARS[o.chosen]) META.chosen = o.chosen;
     for(const id of EQUIP_LIST){
       if(o.eq && o.eq[id]) for(const r of RARITY_ORDER)
@@ -1886,6 +1889,25 @@ function buyShop(id){
   META.shop[id] = (META.shop[id]||0) + 1;
   metaSave(); return true;
 }
+/* 武器解放：設計図制を廃止し、シュガーの確定購入に一本化。
+   解放済みが増えるほど少しずつ高くなる（最初の5本は初期解放）。 */
+const WEAPON_UNLOCK_BASE = 600;
+function weaponUnlockCost(id){
+  if(!META.wp[id] || META.wp[id].own) return null;
+  const owned = WEAPON_LIST.filter(w=>META.wp[w].own).length;
+  return Math.round(WEAPON_UNLOCK_BASE * Math.pow(1.16, Math.max(0, owned-5)));
+}
+function canBuyWeapon(id){
+  const c = weaponUnlockCost(id);
+  return c!==null && META.sugar>=c;
+}
+function buyWeapon(id){
+  if(!canBuyWeapon(id)) return false;
+  META.sugar -= weaponUnlockCost(id);
+  META.wp[id].own = 1;
+  if(META.loadout.indexOf(id)<0 && META.loadout.length < LOADOUT_MAX) META.loadout.push(id);
+  metaSave(); return true;
+}
 const BP_CURVE = [1,1,2,2,3,4,5,6,8,10];       // 各レベルに必要な設計図の枚数
 function metaMax(id){ return WEAPON_MAX_LV; }
 function upgradeCost(id){
@@ -1921,23 +1943,21 @@ function doUpgrade(id){
   META.sugar-=c.sugar; w.pieces-=c.pieces; w.lv++;
   metaSave(); return true;
 }
-/* キャラの強化 */
+/* キャラはシュガーで「解放」するだけ（レベル制は廃止）。
+   解放した瞬間から固有性は全開（縦の強化はショップに集約）。 */
 function charCost(id){
   const c=META.ch[id];
-  if(c.lv<=0) return { pieces: 10, sugar: 400, unlock:true };   // 未所持：解放に必要な数
-  const need = CHAR_CURVE[c.lv-1];
-  if(need===undefined) return null;
-  return { pieces: need, sugar: Math.round(150*Math.pow(1.36, c.lv-1)) };
+  if(c.lv>0) return null;                    // 解放済みなら買うものはない
+  return { sugar: 1500, unlock:true };
 }
 function canUpgradeChar(id){
   const c=charCost(id); if(!c) return false;
-  return META.sugar>=c.sugar && META.ch[id].pieces>=c.pieces;
+  return META.sugar>=c.sugar;
 }
 function upgradeChar(id){
   if(!canUpgradeChar(id)) return false;
-  const c=charCost(id), ch=META.ch[id];
-  META.sugar-=c.sugar; ch.pieces-=c.pieces;
-  ch.lv = c.unlock ? 1 : ch.lv+1;
+  META.sugar-=charCost(id).sugar;
+  META.ch[id].lv = CHAR_MAX_LV;              // 解放＝固有性を全開にする
   metaSave(); return true;
 }
 function grantChar(id){ META.ch[id].pieces += 1; }
@@ -6800,9 +6820,9 @@ function buildChoicePool(){
         pool.push({kind:'mod-'+k, id:w.id, weight: k==='dmg'?6 : k==='count'?6 : 5});
     }
   }
-  // 武器と同じく、厨房で編成したパッシブからしか出ない
+  // パッシブは全種がラン内の選択肢に出る（メタでの編成・解放は廃止）。
   const pOwned=Object.keys(state.passives).length;
-  for(const id of META.ploadout){
+  for(const id of PASSIVE_LIST){
     if(!PASSIVES[id]) continue;
     const lv=state.passives[id]||0;
     if(lv>=PASSIVES[id].max) continue;
@@ -7136,10 +7156,10 @@ let kTab = 'home';
 let swapFrom = null;              // 編成が埋まっているときの交換待ち（武器id）
 let kDetail = null;               // 開いている詳細パネル
 const K_TABS = [
-  {id:'wp',   icon:'🔪', label:'武器',     title:'WEAPONS'},
-  {id:'ps',   icon:'🍬', label:'パッシブ', title:'PASSIVES'},
-  {id:'home', icon:'🍳', label:'出撃',     title:'KITCHEN'},
-  {id:'ch',   icon:'👩‍🍳', label:'キャラ',   title:'CHARACTER'},
+  {id:'wp',   icon:'🔪', label:'武器',   title:'WEAPONS'},
+  {id:'shop', icon:'💪', label:'強化',   title:'UPGRADES'},
+  {id:'home', icon:'🍳', label:'出撃',   title:'KITCHEN'},
+  {id:'ch',   icon:'👩‍🍳', label:'キャラ', title:'CHARACTER'},
 ];
 function show(id, on){ $(id).classList[on?'remove':'add']('hidden'); }
 /* 厨房の画面で使うアイコン。立ち絵があるものは絵文字ではなく実物を出す。
@@ -7154,8 +7174,8 @@ function renderKitchen(){
   const home = kTab==='home';
   $('k-title').textContent = (K_TABS.find(t=>t.id===kTab)||{title:'TEST'}).title;
   for(const id of ['k-sec1','k-stages','k-sec2','k-loadsum','btn-sortie']) show(id, home);
-  show('k-slots', kTab==='wp' || kTab==='ps');
-  show('k-swap',  (kTab==='wp'||kTab==='ps') && !!swapFrom);
+  show('k-slots', kTab==='wp');
+  show('k-swap',  kTab==='wp' && !!swapFrom);
   show('k-ring',  kTab==='ch');
   renderTabs();
   renderDetail();
@@ -7164,7 +7184,7 @@ function renderKitchen(){
     renderStages(); renderLoadSum(); return;
   }
   if(kTab==='wp') renderWeaponTab();
-  else if(kTab==='ps') renderPassiveTab();
+  else if(kTab==='shop') renderShopTab();
   else if(kTab==='ch') renderCharTab();
   else renderDevTab();
 }
@@ -7200,7 +7220,8 @@ function renderDetail(){
 }
 function detailAction(act, arg, arg2){
   if(act==='close') return closeDetail();
-  if(act==='upW'){ if(doUpgrade(arg)){ AU.play('levelup'); renderKitchen(); } return; }
+  if(act==='buyW'){ if(buyWeapon(arg)){ AU.play('levelup'); renderKitchen(); } return; }
+  if(act==='buyS'){ if(buyShop(arg)){ AU.play('levelup'); renderKitchen(); } return; }
   if(act==='addW'){ equipTap(arg); return; }
   if(act==='delW'){
     const i = META.loadout.indexOf(arg);
@@ -7228,71 +7249,62 @@ function detailAction(act, arg, arg2){
 const closeBtn = '<button class="btn ghost" data-act="close">閉じる</button>';
 
 function detailWeapon(id){
-  const d=WEAPONS[id], w=META.wp[id], c=upgradeCost(id);
+  const d=WEAPONS[id], w=META.wp[id];
   const inL = META.loadout.indexOf(id)>=0;
   const locked = !w.own;
-  const parts=[`攻撃力 +${w.lv*5}%`];
-  if(d.meta) parts.push(`${d.meta.label} ${d.meta.key==='cd'?'-':'+'}${Math.round(w.lv*d.meta.per*100)}%`);
-  const cnt=(w.lv>=5?1:0)+(w.lv>=10?1:0); if(cnt) parts.push(`数 +${cnt}`);
-  const next = w.lv<WEAPON_MAX_LV ? `<div class="sub">次のレベルで：${
-    d.meta ? d.meta.label+'が伸びる' : '攻撃力が伸びる'}${w.lv+1===5||w.lv+1===10?'　＋「数」が1増える':''}</div>` : '';
+  const cat = CATEGORY_INFO[weaponCategory(id)];
+  const mst = Math.floor(META.mastery[id]||0);
   // バトル中に伸ばせる軸。武器によって伸ばせないものがある。
   const axes = ['dmg','count','spd','area'].map(k=>{
     const max = axisMax(id, k), A = AXIS_INFO[k];
     return max>0
       ? `<div>${A.label}　最大 <b>${max}</b> 段　<span style="color:var(--cream-dim)">${A.per}</span></div>`
       : `<div style="color:#5f544c">${A.label}　伸ばせない</div>`;
-  }).join('')
-  + '<div class="sub">強化はバトル中の武器レベルまでしか積めません。'
-  + '（Lv3なら合計3段まで）</div>';
+  }).join('');
   let btns = '';
   if(locked){
-    btns = `<div class="sub">バトルで設計図を拾うと使えるようになります。いま ${w.pieces} 枚。</div>`;
+    const c = weaponUnlockCost(id);
+    btns = `<div class="drow"><button class="btn" data-act="buyW" data-arg="${id}" ${canBuyWeapon(id)?'':'disabled'}>`
+      + `シュガーで解放<br><span style="font-size:10px;font-weight:400">🍬 ${c!=null?c.toLocaleString():'-'}</span></button></div>`
+      + `<div class="drow">${closeBtn}</div>`;
   } else {
-    const up = c ? `<button class="btn" data-act="upW" data-arg="${id}" ${canUpgrade(id)?'':'disabled'}>`
-      + `強化する　Lv${w.lv}→${w.lv+1}<br><span style="font-size:10px;font-weight:400">砂糖 ${c.sugar} / 図面 ${c.pieces}</span></button>`
-      : `<button class="btn" disabled>強化はカンスト</button>`;
     const eq = inL
       ? `<button class="btn ghost" data-act="delW" data-arg="${id}">編成から外す</button>`
       : `<button class="btn ghost" data-act="addW" data-arg="${id}">${
           META.loadout.length<LOADOUT_MAX?'編成に入れる':'枠と入れかえる'}</button>`;
-    btns = `<div class="drow">${up}</div><div class="drow">${eq}${closeBtn}</div>`;
+    btns = `<div class="drow">${eq}${closeBtn}</div>`;
   }
   return `<div class="dh"><span class="di">${iconOf(d)}</span>
-      <div><div class="dn">${d.name}</div><div class="dt">${d.trait}${locked?'　🔒 未解放':''}</div></div></div>
+      <div><div class="dn">${d.name}</div><div class="dt">${cat?cat.icon+cat.name+'　':''}${d.trait}${locked?'　🔒 未解放':''}</div></div></div>
     <div class="dd">${d.desc}</div>
-    <div class="dl">Lv <b>${w.lv}</b> / ${WEAPON_MAX_LV}　図面 <b>${w.pieces}</b>${
-      inL?'　<span style="color:var(--pistachio)">編成中</span>':''}<br>
-      ${w.lv? parts.join('　') : '<span style="color:#5f544c">未強化</span>'}</div>
-    ${next}
+    <div class="dl">${inL?'<span style="color:var(--pistachio)">編成中</span>　':''}マスタリー <b>${mst}</b>${locked?'　<span style="color:#5f544c">未解放</span>':''}</div>
     <div class="dl" style="border-top:1px solid var(--line);padding-top:10px">
-      <b style="color:var(--lemon)">バトル中に伸ばせるもの</b>${axes}</div>
-    <div class="dd" style="border-top:1px solid var(--line);padding-top:10px">
+      <b style="color:var(--lemon)">バトル中に伸ばせるもの</b>${axes}
+      <div class="sub">強さはバトル中に育てます。厨房では育ちません。</div></div>
+    ${d.evo?`<div class="dd" style="border-top:1px solid var(--line);padding-top:10px">
       <b style="color:var(--lemon)">進化：${d.evo.name}</b><br>${d.evo.desc}<br>
-      <span class="sub">Lv6 かつ 4種の強化が合計3段以上で進化します。</span></div>
-    ${btns}${locked?'<div class="drow">'+closeBtn+'</div>':''}`;
+      <span class="sub">バトル中に Lv10 まで育てると進化できます。</span></div>`:''}
+    ${btns}`;
 }
 
 function detailChar(id){
   const D=CHARS[id], c=META.ch[id], cost=charCost(id);
   const owned=c.lv>0, sel=META.chosen===id;
-  const stats = owned ? D.per.map(p=>`${p[2]} +${(p[1]*c.lv).toFixed(p[3]==='%'?1:0)}${p[3]}`).join('　') : '';
+  // 解放したら固有性は全開。段階は「そのキャラの持ち味」として全部有効になる。
   const tiers = D.tiers.map(t=>
-    `<div style="color:${c.lv>=t.lv?'var(--pistachio)':'#5f544c'}">Lv${t.lv}　${t.text}</div>`).join('');
-  const label = !cost ? '強化はカンスト'
-    : cost.unlock ? `解放する<br><span style="font-size:10px;font-weight:400">砂糖 ${cost.sugar} / 図面 ${cost.pieces}</span>`
-    : `強化する　Lv${c.lv}→${c.lv+1}<br><span style="font-size:10px;font-weight:400">砂糖 ${cost.sugar} / 図面 ${cost.pieces}</span>`;
-  const up = `<button class="btn" data-act="upC" data-arg="${id}" ${canUpgradeChar(id)?'':'disabled'}>${label}</button>`;
+    `<div style="color:${owned?'var(--pistachio)':'#5f544c'}">${t.text}</div>`).join('');
+  const up = !owned && cost
+    ? `<button class="btn" data-act="upC" data-arg="${id}" ${canUpgradeChar(id)?'':'disabled'}>解放する`
+      + `<br><span style="font-size:10px;font-weight:400">🍬 ${cost.sugar.toLocaleString()}</span></button>`
+    : '';
   const pick = owned && !sel ? `<button class="btn ghost" data-act="selC" data-arg="${id}">このキャラで出撃</button>` : '';
   return `<div class="dh"><span class="di">${iconOf(D)}</span>
-      <div><div class="dn">${D.name}</div><div class="dt">${owned?('Lv '+c.lv+(sel?'　選択中':'')):'未解放'}</div></div></div>
+      <div><div class="dn">${D.name}</div><div class="dt">${owned?(sel?'選択中':'解放済み'):'未解放'}</div></div></div>
     <div class="dl"><b style="color:var(--lemon)">固有武器</b>　${WEAPONS[D.innate].name}<br>
       ${WEAPONS[D.innate].desc}</div>
     <div class="dl"><b style="color:var(--lemon)">スキル：${D.skill}</b><br>${D.skillDesc}</div>
-    ${stats?`<div class="dl">${stats}</div>`:''}
     <div class="dl" style="border-top:1px solid var(--line);padding-top:10px">${tiers}</div>
-    <div class="sub">図面 ${c.pieces} 枚</div>
-    <div class="drow">${up}</div><div class="drow">${pick}${closeBtn}</div>`;
+    ${up?`<div class="drow">${up}</div>`:''}<div class="drow">${pick}${closeBtn}</div>`;
 }
 
 function detailCharPick(){
@@ -7359,20 +7371,14 @@ function detailEquipSlot(sid){
 
 /* 出撃する編成のまとめ。ここを見れば何を持って出るか分かる。 */
 function renderLoadSum(){
-  const c = CHARS[META.chosen], cl = META.ch[META.chosen];
-  const avg = equipAvgLv();
-  const worn = EQUIP_LIST.filter(sid=>META.equipped[sid]);
+  const c = CHARS[META.chosen];
   const L = META.loadout;
   const icons = L.map(id=>`<span title="${WEAPONS[id].name}">${iconOf(WEAPONS[id])}</span>`).join('')
     + Array.from({length:LOADOUT_MAX-L.length},()=>'<i>＋</i>').join('');
   $('k-loadsum').innerHTML = `
     <div class="row"><span class="lb">キャラ</span>
       <span class="vl">${iconOf(c)} ${c.name}</span>
-      <span class="sub">Lv ${cl.lv}　${c.innate ? WEAPONS[c.innate].name : ''}</span></div>
-    <div class="row"><span class="lb">装備</span>
-      <span class="vl">平均 Lv ${avg.toFixed(1)}</span>
-      <span class="sub">${worn.length} / ${EQUIP_LIST.length} 部位</span>
-      ${worn.length<EQUIP_LIST.length ? '<span class="warn">空きあり</span>' : ''}</div>
+      <span class="sub">${c.innate ? WEAPONS[c.innate].name : ''}</span></div>
     <div class="row"><span class="lb">武器</span>
       <span class="icons">${icons}</span>
       <span class="sub">${L.length} / ${LOADOUT_MAX} 本</span></div>`;
@@ -7470,40 +7476,37 @@ function detailPassive(id){
     ${btns}`;
 }
 
+/* 強化ショップ：アカウント共通のフラットな一覧。押すとその場でシュガー購入。 */
+function renderShopTab(){
+  $('k-note').innerHTML = '<b style="color:#8fd48a">強化ショップ</b>　'
+    + 'シュガーで買う恒久の底上げ。全キャラ共通・払い戻しなし。'
+    + '上限まで買うと打ち止め（縦の強さはここと、バトル中の成長で作ります）。';
+  $('k-list').innerHTML = SHOP_LIST.map(id=>{
+    const d=SHOP[id], r=META.shop[id]||0, c=shopCost(id), maxed=r>=d.max, cur=d.per*r;
+    const btn = maxed
+      ? `<button class="eqchip" disabled style="opacity:.5">MAX</button>`
+      : `<button class="eqchip" data-buy="${id}" ${canBuyShop(id)?'':'disabled'}
+           style="border-color:#ffd84d;color:#ffd84d">🍬 ${c.toLocaleString()}</button>`;
+    return `<div class="wcard" style="border-left-color:#8fd48a">
+      <span class="ic">${d.icon}</span>
+      <div class="mid"><div class="nm">${d.name}　<span style="color:var(--cream-dim);font-size:11px">${r} / ${d.max}</span></div>
+        <div class="eff">いま <b>${cur>0?('+'+cur+d.unit):'—'}</b>　<span style="color:var(--cream-dim)">1ランク +${d.per}${d.unit}</span></div>
+        <div class="eqrow">${btn}</div></div></div>`;
+  }).join('');
+  $('k-list').querySelectorAll('button[data-buy]').forEach(b=>
+    b.addEventListener('click', ()=>{ if(buyShop(b.dataset.buy)){ AU.play('levelup'); renderKitchen(); } }));
+}
 function renderCharTab(){
   const D = CHARS[META.chosen], c = META.ch[META.chosen];
-  const cells = EQUIP_LIST.map(sid=>{
-    const S = EQUIP[sid], w = META.equipped[sid];
-    if(!w) return `<button class="eq empty p-${sid}" data-eq="${sid}">
-      <span class="es">${S.name}</span><span class="ei">${S.icon}</span>
-      <span class="en">なし</span></button>`;
-    const it = EQUIP_ITEMS[w.id], R = RARITY[w.rar], e = META.eq[sid][w.rar];
-    return `<button class="eq p-${sid}" data-eq="${sid}" style="border-color:${R.col}">
-      <span class="es">${S.name}</span><span class="ei">${it.icon}</span>
-      <span class="en">${it.name}</span>
-      <span class="el" style="color:${R.col}">${R.name} Lv${e.lv}</span></button>`;
-  }).join('');
-  $('k-ring').innerHTML = cells + `
+  $('k-ring').innerHTML = `
     <button class="cc" data-char="${META.chosen}">
       <span class="ci">${iconOf(D)}</span>
       <span class="cn">${D.name}</span>
-      <span class="cl">Lv ${c.lv}</span></button>`;
-  const b = equipBonus();
-  const sign = v => (v<0?'−':'+') + Math.abs(v).toFixed(1);
-  const eff = [
-    b.hp&&`最大HP ${sign(b.hp).replace('.0','')}`, b.atk&&`攻撃力 ${sign(b.atk)}%`,
-    b.crit&&`クリ率 ${sign(b.crit)}%`, b.spd&&`移動 ${sign(b.spd)}%`,
-    b.eva&&`回避 ${sign(b.eva)}%`,
-    b.dr&&`被ダメ ${b.dr<0?'+':'−'}${Math.abs(b.dr).toFixed(1)}%`,
-    b.exp&&`経験値 ${sign(b.exp)}%`, b.pick&&`拾得 ${sign(b.pick).replace('.0','')}`,
-    b.area&&`範囲 ${sign(b.area)}%`, b.sugar&&`砂糖 ${sign(b.sugar).replace('.0','')}%`
-  ].filter(Boolean).join('　');
-  $('k-note').innerHTML = (eff ? '<b style="color:#8fd48a">装備の合計：'+eff+'</b><br>' : '')
-    + 'キャラを押すとスキルと強化、装備枠を押すと着けかえができます。';
+      <span class="cl">${c.lv>0?'解放済み':'未解放'}</span></button>`;
+  $('k-note').innerHTML = 'キャラを押すと固有武器・スキルの詳細が出ます。'
+    + '「キャラを変える」で他のキャラを解放・選択できます。（縦の強化は「強化」タブに集約）';
   $('k-list').innerHTML = `<button class="btn ghost" data-act="pickC"
       style="grid-column:1/-1;justify-self:center">キャラを変える</button>`;
-  $('k-ring').querySelectorAll('.eq[data-eq]').forEach(el=>
-    el.addEventListener('click', ()=>openDetail({type:'equip', slot:el.dataset.eq})));
   $('k-ring').querySelectorAll('.cc[data-char]').forEach(el=>
     el.addEventListener('click', ()=>openDetail({type:'char', id:el.dataset.char})));
   $('k-list').querySelectorAll('[data-act]').forEach(el=>
@@ -7624,11 +7627,11 @@ function renderWeaponTab(){
     const id = L[i];
     if(!id) return `<button class="kslot empty" data-slot="${i}">
         <span class="si">＋</span><span class="sname">空き枠</span></button>`;
-    const d = WEAPONS[id], w = META.wp[id];
+    const d = WEAPONS[id], cat = CATEGORY_INFO[weaponCategory(id)];
     return `<button class="kslot filled${swapFrom?' pick':''}" data-slot="${i}">
       <span class="si">${iconOf(d)}</span>
       <span class="sname">${d.name}</span>
-      <span class="slv">Lv ${w.lv}</span></button>`;
+      <span class="slv">${cat?cat.icon+cat.name:''}</span></button>`;
   }).join('');
   if(swapFrom){
     $('k-swap').innerHTML = `<b>${WEAPONS[swapFrom].name}</b> と入れかえる枠を選んでください`
@@ -7637,16 +7640,17 @@ function renderWeaponTab(){
   $('k-note').innerHTML =
     `持ち込めるのは <b style="color:#ffd84d">${L.length} / ${LOADOUT_MAX}</b> 本です。`
     + 'レベルアップの選択肢は<b style="color:#8fd48a">編成した武器からだけ</b>出ます。'
-    + '<br>枠や一覧を押すと、詳細と強化が開きます。';
-  // 下段：全武器の一覧。名前・アイコン・レベル・図面だけ。
+    + '<br>枠や一覧を押すと、詳細と解放（シュガー）が開きます。';
+  // 下段：全武器の一覧。名前・アイコン・カテゴリ・マスタリー。
   $('k-list').innerHTML = WEAPON_LIST.map(id=>{
-    const d=WEAPONS[id], w=META.wp[id];
+    const d=WEAPONS[id], w=META.wp[id], cat=CATEGORY_INFO[weaponCategory(id)];
     const inL = L.indexOf(id)>=0, locked = !w.own;
     const col = locked ? '#2a201d' : inL ? 'var(--lemon)' : 'var(--pistachio)';
+    const state2 = locked ? '🔒 未解放' : ('マスタリー <b>'+Math.floor(META.mastery[id]||0)+'</b>');
     return `<button class="mini${locked?' lock':''}" data-w="${id}" style="border-left-color:${col}">
       <span class="mi">${iconOf(d)}</span>
-      <span class="mb"><span class="mn">${d.name}</span>
-        <span class="ms">${locked?'🔒 未解放':'Lv <b>'+w.lv+'</b>'}　図面 ${w.pieces}${inL?'　編成中':''}</span>
+      <span class="mb"><span class="mn">${d.name}<span style="color:var(--cream-dim);font-size:9.5px">　${cat?cat.icon+cat.name:''}</span></span>
+        <span class="ms">${state2}${inL?'　編成中':''}</span>
       </span></button>`;
   }).join('');
   $('k-slots').querySelectorAll('.kslot[data-slot]').forEach(b=>
